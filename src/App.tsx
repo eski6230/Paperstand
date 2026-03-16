@@ -14,6 +14,7 @@ import MeTab from './components/MeTab';
 import ApiKeyModal from './components/ApiKeyModal';
 import AuthButton from './components/AuthButton';
 import BottomNav from './components/BottomNav';
+import PrivacyPolicyModal from './components/PrivacyPolicyModal';
 import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import type { User } from '@supabase/supabase-js';
@@ -54,6 +55,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Pull to refresh state
@@ -508,6 +510,25 @@ export default function App() {
               </>
             )}
           </div>
+
+          {/* Footer */}
+          <footer className="mt-12 pb-4 text-center text-xs text-slate-400 dark:text-slate-600 space-x-4">
+            <span>© 2025 Paperstand</span>
+            <button
+              onClick={() => setShowPrivacyModal(true)}
+              className="hover:text-slate-600 dark:hover:text-slate-400 transition-colors underline underline-offset-2"
+            >
+              개인정보처리방침
+            </button>
+            <a
+              href="https://github.com/eski6230/Paperstand"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-slate-600 dark:hover:text-slate-400 transition-colors"
+            >
+              GitHub
+            </a>
+          </footer>
         </main>
       </div>
 
@@ -564,6 +585,8 @@ export default function App() {
           handleRefresh();
         }}
       />
+
+      <PrivacyPolicyModal isOpen={showPrivacyModal} onClose={() => setShowPrivacyModal(false)} />
 
       {/* 모바일 바텀 네비게이션 */}
       <BottomNav
