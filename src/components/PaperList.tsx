@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Paper } from '../types';
-import { Clock, FileText, ThumbsUp, MessageCircle } from 'lucide-react';
+import { Clock, FileText, ThumbsUp, MessageCircle, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { supabase } from '../lib/supabase';
 
@@ -15,9 +15,10 @@ interface PaperListProps {
   isStreaming?: boolean;
   onSelectPaper: (paper: Paper) => void;
   onSelectKeyword: (keyword: string) => void;
+  readPaperIds?: Set<string>;  // history에서 이미 읽은 논문 ID 세트
 }
 
-export default function PaperList({ papers, loading, isStreaming, onSelectPaper, onSelectKeyword }: PaperListProps) {
+export default function PaperList({ papers, loading, isStreaming, onSelectPaper, onSelectKeyword, readPaperIds }: PaperListProps) {
   const [voteSummaries, setVoteSummaries] = useState<Record<string, VoteSummary>>({});
 
   // 카드 목록이 바뀔 때 투표수·댓글수 배치 조회
@@ -82,6 +83,7 @@ export default function PaperList({ papers, loading, isStreaming, onSelectPaper,
       {papers.map((paper, index) => {
         const summary = voteSummaries[paper.id];
         const hasActivity = summary && (summary.voteScore !== 0 || summary.commentCount > 0);
+        const isRead = readPaperIds?.has(paper.id) ?? false;
 
         return (
           <motion.div
@@ -89,13 +91,17 @@ export default function PaperList({ papers, loading, isStreaming, onSelectPaper,
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.08 }}
             key={paper.id}
-            className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md dark:hover:border-slate-700 transition-all cursor-pointer group"
+            className={`rounded-2xl p-6 border shadow-sm hover:shadow-md transition-all cursor-pointer group ${
+              isRead
+                ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800/60 opacity-80 hover:opacity-100'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 dark:hover:border-slate-700'
+            }`}
             onClick={() => onSelectPaper(paper)}
           >
             <div className="flex flex-col md:flex-row gap-6">
               <div className="flex-1">
                 {/* 메타 */}
-                <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-3">
+                <div className="flex items-center gap-2 flex-wrap text-sm text-slate-500 dark:text-slate-400 mb-3">
                   <span className="font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 rounded">
                     {paper.journal}
                   </span>
@@ -103,6 +109,13 @@ export default function PaperList({ papers, loading, isStreaming, onSelectPaper,
                     <Clock size={14} />
                     <span>{paper.date}</span>
                   </div>
+                  {/* 읽음 뱃지 */}
+                  {isRead && (
+                    <span className="flex items-center gap-1 text-xs font-medium text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-500/10 px-2 py-0.5 rounded-full">
+                      <CheckCircle2 size={11} />
+                      읽음
+                    </span>
+                  )}
                   {/* 커뮤니티 활동 뱃지 */}
                   {hasActivity && (
                     <div className="flex items-center gap-2 ml-auto">

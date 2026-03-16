@@ -3,12 +3,14 @@ import { Paper, UserPreferences, RelatedArticle } from "../types";
 import { SUB_TOPICS, PUBMED_QUERIES } from "../constants";
 
 function getAI() {
-  // 1. Check for manually entered key in localStorage
+  // 1. 유저가 UI에서 직접 입력한 키 (우선순위 최고)
   const manualKey = typeof window !== 'undefined' ? localStorage.getItem('custom_gemini_api_key') : null;
-  
-  // 2. Enforce user-provided key only (Do not use process.env.GEMINI_API_KEY to prevent using developer's quota)
-  const apiKey = manualKey;
-  
+
+  // 2. 로컬 개발환경 전용 fallback (.env의 GEMINI_API_KEY, 배포 환경에서는 설정하지 않음)
+  const devKey = process.env.GEMINI_API_KEY ?? null;
+
+  const apiKey = manualKey ?? devKey;
+
   if (!apiKey) {
     throw new Error("API 키가 설정되지 않았습니다. 서비스를 이용하려면 '개인 API 키 설정' 메뉴에서 Google Gemini API 키를 등록해야 합니다.");
   }

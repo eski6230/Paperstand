@@ -243,30 +243,35 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
           onClick={onClose}
         />
         
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-3xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800"
+          className="relative w-full max-w-3xl max-h-[92vh] sm:max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800"
         >
-          {/* Header */}
-          <div className="flex items-start justify-between p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
-            <div className="pr-8">
-              <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-2">
+          {/* Header — 모바일 compact / 데스크톱 normal */}
+          <div className="flex items-start justify-between px-4 py-3 sm:p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <div className="pr-8 flex-1 min-w-0">
+              {/* 메타 라인 */}
+              <div className="flex items-center flex-wrap gap-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-1.5 sm:mb-2">
                 {paperStack.length > 1 && (
-                  <button 
+                  <button
                     onClick={handleBack}
                     className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 px-2 py-0.5 rounded transition-colors"
                   >
-                    <ArrowLeft size={14} /> 뒤로
+                    <ArrowLeft size={13} /> 뒤로
                   </button>
                 )}
                 <span className="font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 rounded">{currentPaper.journal}</span>
                 <span>{currentPaper.date}</span>
               </div>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 leading-tight">{currentPaper.title}</h2>
-              <div className="flex flex-wrap gap-2 mt-4">
-                {currentPaper.keywords.map((kw) => {
+              {/* 제목 — 모바일 text-base, 데스크톱 text-2xl */}
+              <h2 className="text-base sm:text-2xl font-bold text-slate-900 dark:text-slate-100 leading-snug line-clamp-3 sm:line-clamp-none">
+                {currentPaper.title}
+              </h2>
+              {/* 키워드 — 모바일에서 최대 3개만 + 나머지 숨김 */}
+              <div className="flex flex-wrap gap-1.5 mt-2 sm:mt-4">
+                {currentPaper.keywords.slice(0, window.innerWidth < 640 ? 3 : undefined).map((kw) => {
                   const isSubscribed = subscriptions.includes(kw);
                   return (
                     <div key={kw} className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -275,31 +280,36 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
                           onClose();
                           onSelectKeyword(kw);
                         }}
-                        className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 transition-colors"
+                        className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 px-2.5 py-1 transition-colors"
                       >
                         {kw}
                       </button>
                       <button
                         onClick={() => onSubscribe(kw)}
                         title={isSubscribed ? "구독 취소" : "이 주제 구독하기"}
-                        className={`px-2 py-1.5 transition-colors ${
-                          isSubscribed 
-                            ? 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/20' 
+                        className={`px-1.5 py-1 transition-colors ${
+                          isSubscribed
+                            ? 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/20'
                             : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-200 dark:hover:bg-slate-700'
                         }`}
                       >
-                        {isSubscribed ? <BookmarkCheck size={14} /> : <BookmarkPlus size={14} />}
+                        {isSubscribed ? <BookmarkCheck size={12} /> : <BookmarkPlus size={12} />}
                       </button>
                     </div>
                   );
                 })}
+                {window.innerWidth < 640 && currentPaper.keywords.length > 3 && (
+                  <span className="text-xs text-slate-400 dark:text-slate-500 px-2 py-1">
+                    +{currentPaper.keywords.length - 3}
+                  </span>
+                )}
               </div>
             </div>
-            <button 
+            <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors shrink-0"
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors shrink-0"
             >
-              <X size={24} />
+              <X size={20} />
             </button>
           </div>
 

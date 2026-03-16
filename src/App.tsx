@@ -13,6 +13,7 @@ import Onboarding from './components/Onboarding';
 import MeTab from './components/MeTab';
 import ApiKeyModal from './components/ApiKeyModal';
 import AuthButton from './components/AuthButton';
+import BottomNav from './components/BottomNav';
 import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import type { User } from '@supabase/supabase-js';
@@ -338,12 +339,12 @@ export default function App() {
         </div>
 
         {/* Content Area */}
-        <main 
+        <main
           ref={mainRef}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          className="flex-1 overflow-y-auto p-6 md:p-8 relative z-10 bg-slate-50 dark:bg-slate-950 transition-transform duration-200"
+          className="flex-1 overflow-y-auto p-6 pb-24 md:pb-8 md:p-8 relative z-10 bg-slate-50 dark:bg-slate-950 transition-transform duration-200"
           style={{ transform: `translateY(${pullDistance}px)` }}
         >
           <div className="max-w-4xl mx-auto">
@@ -495,12 +496,13 @@ export default function App() {
                     </p>
                   </div>
                 ) : (
-                  <PaperList 
-                    papers={papers} 
-                    loading={loading} 
+                  <PaperList
+                    papers={papers}
+                    loading={loading}
                     isStreaming={isStreaming}
                     onSelectPaper={handleOpenPaper}
                     onSelectKeyword={setSelectedKeyword}
+                    readPaperIds={new Set(preferences.history.map(p => p.id))}
                   />
                 )}
               </>
@@ -554,13 +556,25 @@ export default function App() {
         />
       )}
 
-      <ApiKeyModal 
-        isOpen={showApiKeyModal} 
-        onClose={() => setShowApiKeyModal(false)} 
+      <ApiKeyModal
+        isOpen={showApiKeyModal}
+        onClose={() => setShowApiKeyModal(false)}
         onSave={() => {
           setShowApiKeyModal(false);
           handleRefresh();
         }}
+      />
+
+      {/* 모바일 바텀 네비게이션 */}
+      <BottomNav
+        selectedCategory={selectedCategory}
+        onSelectCategory={(cat) => {
+          setSelectedCategory(cat);
+          setSelectedKeyword(null);
+          setSelectedTab('suggestion');
+          setSidebarOpen(false);
+        }}
+        firstSpecialty={preferences.specialties[0] || ''}
       />
     </div>
   );
