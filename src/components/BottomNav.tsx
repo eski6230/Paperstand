@@ -3,8 +3,10 @@ import { Newspaper, Bookmark, History, User } from 'lucide-react';
 interface BottomNavProps {
   selectedCategory: string;
   onSelectCategory: (category: string) => void;
-  firstSpecialty: string; // 유저의 첫 번째 관심 분과
+  homeCategory: string; // 돌아갈 분과 (마지막으로 선택한 specialty)
 }
+
+const SPECIAL_CATS = ['Subscriptions', 'History', 'My Interest'];
 
 const TABS = [
   { id: '__home__', label: '홈', icon: Newspaper },
@@ -13,9 +15,17 @@ const TABS = [
   { id: 'My Interest', label: '마이', icon: User },
 ];
 
-export default function BottomNav({ selectedCategory, onSelectCategory, firstSpecialty }: BottomNavProps) {
-  const resolveId = (id: string) => id === '__home__' ? firstSpecialty : id;
-  const isActive = (id: string) => resolveId(id) === selectedCategory;
+export default function BottomNav({ selectedCategory, onSelectCategory, homeCategory }: BottomNavProps) {
+  const isHomeActive = !SPECIAL_CATS.includes(selectedCategory);
+
+  const isActive = (id: string) => {
+    if (id === '__home__') return isHomeActive;
+    return id === selectedCategory;
+  };
+
+  const handleClick = (id: string) => {
+    onSelectCategory(id === '__home__' ? homeCategory : id);
+  };
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-30 md:hidden bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 safe-area-inset-bottom">
@@ -25,7 +35,7 @@ export default function BottomNav({ selectedCategory, onSelectCategory, firstSpe
           return (
             <button
               key={id}
-              onClick={() => onSelectCategory(resolveId(id))}
+              onClick={() => handleClick(id)}
               className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
                 active
                   ? 'text-indigo-600 dark:text-indigo-400'

@@ -14,6 +14,7 @@ import MeTab from './components/MeTab';
 import ApiKeyModal from './components/ApiKeyModal';
 import AuthButton from './components/AuthButton';
 import BottomNav from './components/BottomNav';
+import CategoryTabs from './components/CategoryTabs';
 import PrivacyPolicyModal from './components/PrivacyPolicyModal';
 import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown } from 'lucide-react';
 import { supabase } from './lib/supabase';
@@ -57,6 +58,17 @@ export default function App() {
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // 마지막으로 선택한 specialty 추적 (홈 버튼용)
+  const SPECIAL_CATS = ['Subscriptions', 'History', 'My Interest'];
+  const lastSpecialtyRef = useRef<string>('');
+
+  // selectedCategory가 specialty일 때마다 lastSpecialty 갱신
+  useEffect(() => {
+    if (selectedCategory && !SPECIAL_CATS.includes(selectedCategory)) {
+      lastSpecialtyRef.current = selectedCategory;
+    }
+  }, [selectedCategory]);
 
   // Pull to refresh state
   const mainRef = useRef<HTMLElement>(null);
@@ -307,14 +319,15 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Header */}
-        <header className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 h-16 flex items-center px-6 shrink-0 justify-between transition-colors duration-200 z-10">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 md:hidden transition-colors">
+        <header className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 h-14 flex items-center px-4 shrink-0 justify-between transition-colors duration-200 z-10">
+          <div className="flex items-center gap-2">
+            {/* 햄버거: 데스크톱에서만 표시 (사이드바 없는 레이아웃 대비) */}
+            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 hidden md:flex transition-colors">
               <Menu size={20} />
             </button>
             <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
-              <Newspaper size={24} />
-              <h1 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">Paperstand</h1>
+              <Newspaper size={22} />
+              <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100">Paperstand</h1>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-1 justify-end max-w-md ml-4">
@@ -328,6 +341,19 @@ export default function App() {
             <AuthButton user={currentUser} onAuthChange={setCurrentUser} />
           </div>
         </header>
+
+        {/* 모바일 분과 탭 - 구독/히스토리/마이 탭에서는 숨김 */}
+        {!SPECIAL_CATS.includes(selectedCategory) && (
+          <CategoryTabs
+            specialties={preferences.specialties}
+            selectedCategory={selectedCategory}
+            onSelectCategory={(cat) => {
+              setSelectedCategory(cat);
+              setSelectedKeyword(null);
+              setSelectedTab('suggestion');
+            }}
+          />
+        )}
 
         {/* Pull to refresh indicator */}
         <div 
@@ -591,13 +617,13 @@ export default function App() {
       {/* 모바일 바텀 네비게이션 */}
       <BottomNav
         selectedCategory={selectedCategory}
+        homeCategory={lastSpecialtyRef.current || preferences.specialties[0] || ''}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
           setSelectedKeyword(null);
           setSelectedTab('suggestion');
           setSidebarOpen(false);
         }}
-        firstSpecialty={preferences.specialties[0] || ''}
       />
     </div>
   );
