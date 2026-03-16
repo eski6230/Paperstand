@@ -1,0 +1,118 @@
+import { Paper } from '../types';
+import { Clock, FileText } from 'lucide-react';
+import { motion } from 'motion/react';
+
+interface PaperListProps {
+  papers: Paper[];
+  loading: boolean;
+  isStreaming?: boolean;
+  onSelectPaper: (paper: Paper) => void;
+  onSelectKeyword: (keyword: string) => void;
+}
+
+export default function PaperList({ papers, loading, isStreaming, onSelectPaper, onSelectKeyword }: PaperListProps) {
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm animate-pulse">
+            <div className="h-4 bg-slate-200 rounded w-1/4 mb-4"></div>
+            <div className="h-6 bg-slate-200 rounded w-3/4 mb-4"></div>
+            <div className="flex gap-2 mb-6">
+              <div className="h-6 bg-slate-200 rounded-full w-20"></div>
+              <div className="h-6 bg-slate-200 rounded-full w-24"></div>
+            </div>
+            <div className="space-y-2">
+              <div className="h-4 bg-slate-200 rounded w-full"></div>
+              <div className="h-4 bg-slate-200 rounded w-5/6"></div>
+              <div className="h-4 bg-slate-200 rounded w-4/6"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (papers.length === 0 && !isStreaming) {
+    return (
+      <div className="text-center py-20">
+        <FileText className="mx-auto h-12 w-12 text-slate-300 mb-4" />
+        <h3 className="text-lg font-medium text-slate-900">No papers found</h3>
+        <p className="text-slate-500">Try selecting a different category or keyword.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {papers.map((paper, index) => (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: index * 0.1 }}
+          key={paper.id} 
+          className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+          onClick={() => onSelectPaper(paper)}
+        >
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 text-sm text-slate-500 mb-3">
+                <span className="font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{paper.journal}</span>
+                <div className="flex items-center gap-1">
+                  <Clock size={14} />
+                  <span>{paper.date}</span>
+                </div>
+              </div>
+              
+              <h3 className="text-xl font-bold text-slate-900 mb-4 group-hover:text-indigo-700 transition-colors leading-tight">
+                {paper.title}
+              </h3>
+              
+              <div className="flex flex-wrap gap-2 mb-5">
+                {paper.keywords.map((kw) => (
+                  <button
+                    key={kw}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectKeyword(kw);
+                    }}
+                    className="text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-full transition-colors"
+                  >
+                    {kw}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Key Clinical Points</h4>
+                <div className="text-slate-700 text-sm leading-relaxed space-y-2">
+                  {(paper.shortSummary || "").split(/\\n|\n/).filter(line => line.trim() !== '').map((line, i) => (
+                    <p key={i} className="flex items-start gap-2">
+                      <span className="text-indigo-400 font-bold shrink-0 mt-0.5">•</span>
+                      <span>{line.replace(/^\d+\.\s*/, '')}</span>
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      ))}
+
+      {isStreaming && papers.length < 3 && (
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm animate-pulse">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-4 h-4 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
+            <span className="text-sm font-medium text-slate-500">AI가 다음 논문을 분석 중입니다...</span>
+          </div>
+          <div className="h-4 bg-slate-200 rounded w-1/4 mb-4"></div>
+          <div className="h-6 bg-slate-200 rounded w-3/4 mb-4"></div>
+          <div className="space-y-2">
+            <div className="h-4 bg-slate-200 rounded w-full"></div>
+            <div className="h-4 bg-slate-200 rounded w-5/6"></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
