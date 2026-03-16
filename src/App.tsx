@@ -68,13 +68,22 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Auth state listener
+  // Auth state listener + profile auto-creation
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setCurrentUser(session?.user ?? null);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setCurrentUser(session?.user ?? null);
+      // 최초 로그인 시 profiles 테이블에 자동 upsert
+      if (event === 'SIGNED_IN' && session?.user) {
+        const u = session.user;
+        supabase.from('profiles').upsert({
+          id: u.id,
+          display_name: u.user_metadata?.full_name ?? u.email ?? '익명',
+          avatar_url: u.user_metadata?.avatar_url ?? null,
+        }, { onConflict: 'id', ignoreDuplicates: true });
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -356,10 +365,15 @@ export default function App() {
                 )}
               </div>
             ) : selectedCategory === 'My Interest' ? (
-              <MeTab 
-                topicWeights={preferences.topicWeights} 
+              <MeTab
+                topicWeights={preferences.topicWeights}
                 historyCount={preferences.history.length}
                 onBubbleClick={handleBubbleClick}
+                user={currentUser}
+                onRequestLogin={() => supabase.auth.signInWithOAuth({
+                  provider: 'google',
+                  options: { redirectTo: window.location.origin },
+                })}
               />
             ) : (
               <>
