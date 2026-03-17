@@ -19,6 +19,11 @@ import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown } from 'luci
 import { supabase } from './lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
+// ─── View type ────────────────────────────────────────────────────────────────
+// 'home'     → multi-specialty newspaper feed (HomeFeed)
+// 'category' → single-specialty or subscriptions view (PaperList)
+type CurrentView = 'home' | 'category';
+
 // 저장된 설정이 없을 때 사용하는 기본값
 const defaultPreferences: UserPreferences = {
   specialties: ['Cardiology', 'Neurology', 'Oncology'],
@@ -55,10 +60,20 @@ export default function App() {
     return false;
   });
 
+  // ── View routing ─────────────────────────────────────────────────────────────
+  const [currentView, setCurrentView] = useState<CurrentView>('home');
+
+  // ── Home state (independent — never shares data with category view) ──────────
+  const [homePapers, setHomePapers] = useState<Record<string, Paper[]>>({});
+  const [homeLoading, setHomeLoading] = useState<Record<string, boolean>>({});
+
+  // ── Category / Subscription view state ───────────────────────────────────────
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<'suggestion' | 'new_journals'>('suggestion');
   const [papers, setPapers] = useState<Paper[]>([]);
+
+  // ── Shared caches ─────────────────────────────────────────────────────────────
   const papersCache = useRef<Record<string, Paper[]>>({});
   // Caches AI-generated summaries keyed by paper.id so re-opens are instant
   const summaryCache = useRef<Record<string, Partial<Paper>>>({});
@@ -73,16 +88,13 @@ export default function App() {
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  // Non-specialty nav states (no CategoryTabs / no paper fetch for these)
-  const SPECIAL_CATS = ['Subscriptions'];
-
   // Track last visited specialty for "By Specialties" BottomNav tap
   const lastSpecialtyRef = useRef<string>('');
   useEffect(() => {
-    if (selectedCategory && !SPECIAL_CATS.includes(selectedCategory)) {
+    if (currentView === 'category' && selectedCategory && selectedCategory !== 'Subscriptions') {
       lastSpecialtyRef.current = selectedCategory;
     }
-  }, [selectedCategory]);
+  }, [currentView, selectedCategory]);
 
   // Pull to refresh state
   const mainRef = useRef<HTMLElement>(null);
@@ -116,13 +128,43 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // selectedCategory === '' → home feed (mixed newspaper view)
-  // No auto-redirect to first specialty; let the user land on HomeFeed.
-
-  // 논문 fetch
+  // ── Home fetch: parallel per-specialty, independent of category state ─────────
   useEffect(() => {
-    // Skip for Home feed (handled by HomeFeed component directly)
-    if (!selectedCategory) return;
+    if (currentView !== 'home') return;
+
+    const specialties = activePreferences.specialties;
+
+    // Mark all as loading; clear stale papers
+    setHomePapers({});
+    setHomeLoading(Object.fromEntries(specialties.map(s => [s, true])));
+
+    specialties.forEach(async (specialty) => {
+      const cacheKey = `${specialty}-all-suggestion`;
+
+      if (papersCache.current[cacheKey]?.length > 0) {
+        setHomePapers(prev => ({ ...prev, [specialty]: papersCache.current[cacheKey] }));
+        setHomeLoading(prev => ({ ...prev, [specialty]: false }));
+        return;
+      }
+
+      try {
+        const fetched = await fetchLitePapersForCategory(
+          specialty, undefined, activePreferences, 'suggestion', 4,
+        );
+        if (fetched.length > 0) {
+          papersCache.current[cacheKey] = fetched;
+          setHomePapers(prev => ({ ...prev, [specialty]: fetched }));
+        }
+      } finally {
+        setHomeLoading(prev => ({ ...prev, [specialty]: false }));
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentView, activePreferences.specialties.join(','), refreshTrigger]);
+
+  // ── Category fetch: only fires when currentView === 'category' ────────────────
+  useEffect(() => {
+    if (currentView !== 'category' || !selectedCategory) return;
 
     let isActive = true;
     const cacheKey = `${selectedCategory}-${selectedKeyword || 'all'}-${selectedTab}`;
@@ -134,14 +176,13 @@ export default function App() {
       }
 
       setLoading(true);
-      setIsStreaming(false);  // no streaming — lite fetch is instant
+      setIsStreaming(false);
       setPapers([]);
       setError(null);
 
       if (mainRef.current) mainRef.current.scrollTop = 0;
 
       try {
-        // Lite fetch: PubMed only, zero AI calls on initial load
         const results = await fetchLitePapersForCategory(
           selectedCategory,
           selectedKeyword || undefined,
@@ -151,7 +192,6 @@ export default function App() {
         );
 
         if (results.length > 0) {
-          // Enrich with any cached AI summaries
           const enriched = results.map(p => ({
             ...p,
             ...(summaryCache.current[p.id] ?? {}),
@@ -163,27 +203,40 @@ export default function App() {
         }
       } catch (err: any) {
         console.error('Failed to fetch papers:', err);
-        if (isActive) {
-          setError(`오류: ${err.message || '논문을 불러오는 중 알 수 없는 오류가 발생했습니다.'}`);
-        }
+        if (isActive) setError(`오류: ${err.message || '논문을 불러오는 중 알 수 없는 오류가 발생했습니다.'}`);
       } finally {
-        if (isActive) {
-          setLoading(false);
-        }
+        if (isActive) setLoading(false);
       }
     };
 
     fetchContent();
     return () => { isActive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategory, selectedKeyword, selectedTab, refreshTrigger]);
+  }, [currentView, selectedCategory, selectedKeyword, selectedTab, refreshTrigger]);
+
+  // ── Navigation helpers ────────────────────────────────────────────────────────
+
+  /** Go to the newspaper home feed. Clears category view state to prevent leakage. */
+  const navigateHome = () => {
+    setCurrentView('home');
+    setPapers([]);  // clear category papers — home uses homePapers, not papers
+  };
+
+  /** Go to a single category or subscriptions view. Clears home state coupling. */
+  const navigateToCategory = (cat: string, keyword?: string) => {
+    setCurrentView('category');
+    setSelectedCategory(cat);
+    setSelectedKeyword(keyword ?? null);
+    setSelectedTab('suggestion');
+  };
 
   const handleRefresh = () => {
-    if (selectedCategory === '') {
-      // Home feed: clear all specialty caches
+    if (currentView === 'home') {
       activePreferences.specialties.forEach(s => {
         delete papersCache.current[`${s}-all-suggestion`];
       });
+      setHomePapers({});
+      setHomeLoading({});
       setRefreshTrigger(prev => prev + 1);
       return;
     }
@@ -227,9 +280,12 @@ export default function App() {
     localStorage.removeItem('medupdate_prefs');
     setPreferences(null);
     setPapers([]);
+    setHomePapers({});
+    setHomeLoading({});
     papersCache.current = {};
     setSelectedCategory('');
     setSelectedKeyword(null);
+    setCurrentView('home');
   };
 
   const handleOpenPaper = (paper: Paper) => {
@@ -244,15 +300,31 @@ export default function App() {
     savePreferences({ ...activePreferences, history: newHistory, topicWeights: newWeights });
   };
 
-  /** Called by PaperModal once AI summaries are ready — cache + update live modal */
+  /** Called by PaperModal once AI summaries are ready — cache + update live views */
   const handleSummarized = (paperId: string, data: Partial<Paper>) => {
     summaryCache.current[paperId] = { ...(summaryCache.current[paperId] ?? {}), ...data };
-    // Update the open modal if it's still showing the same paper
+
+    // Update the open modal
     setSelectedPaper(prev =>
       prev && prev.id === paperId ? { ...prev, ...data } : prev
     );
-    // Also update the paper in the current list so the card reflects summary
+
+    // Update the category list if the paper is there
     setPapers(prev => prev.map(p => p.id === paperId ? { ...p, ...data } : p));
+
+    // Update homePapers if the paper lives in any home section
+    setHomePapers(prev => {
+      const next = { ...prev };
+      let changed = false;
+      Object.keys(next).forEach(spec => {
+        if (next[spec].some(p => p.id === paperId)) {
+          next[spec] = next[spec].map(p => p.id === paperId ? { ...p, ...data } : p);
+          papersCache.current[`${spec}-all-suggestion`] = next[spec];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
   };
 
   const handleVote = (paper: Paper, weightChange: number) => {
@@ -284,11 +356,12 @@ export default function App() {
       {/* Sidebar */}
       <Sidebar
         specialties={activePreferences.specialties}
+        isHome={currentView === 'home'}
         selectedCategory={selectedCategory}
         onSelectCategory={(cat) => {
-          setSelectedCategory(cat);
-          setSelectedKeyword(null);
-          setSelectedTab('suggestion');
+          if (cat === '') { navigateHome(); }
+          else { navigateToCategory(cat); }
+          setSidebarOpen(false);
         }}
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
@@ -322,15 +395,11 @@ export default function App() {
         </header>
 
         {/* 모바일 분과 탭 — 전문과 뷰에서만 표시 */}
-        {selectedCategory !== '' && !SPECIAL_CATS.includes(selectedCategory) && (
+        {currentView === 'category' && selectedCategory !== 'Subscriptions' && (
           <CategoryTabs
             specialties={activePreferences.specialties}
             selectedCategory={selectedCategory}
-            onSelectCategory={(cat) => {
-              setSelectedCategory(cat);
-              setSelectedKeyword(null);
-              setSelectedTab('suggestion');
-            }}
+            onSelectCategory={(cat) => navigateToCategory(cat)}
           />
         )}
 
@@ -355,21 +424,16 @@ export default function App() {
           style={{ transform: `translateY(${pullDistance}px)` }}
         >
           <div className="max-w-4xl mx-auto">
-            {selectedCategory === '' ? (
-              /* ── Home: newspaper mixed feed ─────────────────────────────── */
+            {currentView === 'home' ? (
+              /* ── Home: independent multi-specialty newspaper feed ────────── */
               <HomeFeed
                 specialties={activePreferences.specialties}
-                preferences={activePreferences}
-                papersCache={papersCache}
+                homePapers={homePapers}
+                homeLoading={homeLoading}
                 readPaperIds={new Set(activePreferences.history.map(p => p.id))}
                 onSelectPaper={handleOpenPaper}
                 onSelectKeyword={setSelectedKeyword}
-                onSeeMore={(specialty) => {
-                  setSelectedCategory(specialty);
-                  setSelectedKeyword(null);
-                  setSelectedTab('suggestion');
-                }}
-                refreshTrigger={refreshTrigger}
+                onSeeMore={(specialty) => navigateToCategory(specialty)}
               />
             ) : (
               /* ── Subscriptions or Specialty category view ────────────────── */
@@ -579,12 +643,12 @@ export default function App() {
 
       {/* 모바일 바텀 네비게이션 */}
       <BottomNav
+        isHome={currentView === 'home'}
         selectedCategory={selectedCategory}
         defaultSpecialty={lastSpecialtyRef.current || activePreferences.specialties[0] || ''}
+        onNavigateHome={() => { navigateHome(); setSidebarOpen(false); }}
         onSelectCategory={(cat) => {
-          setSelectedCategory(cat);
-          setSelectedKeyword(null);
-          setSelectedTab('suggestion');
+          navigateToCategory(cat);
           setSidebarOpen(false);
         }}
       />

@@ -28,6 +28,7 @@ const SPECIALTY_ICONS: Record<string, React.ElementType> = {
 
 interface SidebarProps {
   specialties: string[];           // user's preferred specialties (shown first)
+  isHome: boolean;                 // true when the Home view is active
   selectedCategory: string;
   onSelectCategory: (category: string) => void;
   isOpen: boolean;
@@ -40,6 +41,7 @@ interface SidebarProps {
 
 export default function Sidebar({
   specialties,
+  isHome,
   selectedCategory,
   onSelectCategory,
   isOpen,
@@ -68,7 +70,8 @@ export default function Sidebar({
     label: string;
     badge?: number;
   }) => {
-    const active = selectedCategory === id;
+    // Home button (id='') is active when currentView === 'home', not by selectedCategory
+    const active = id === '' ? isHome : selectedCategory === id;
     return (
       <button
         onClick={() => handleSelect(id)}
@@ -94,7 +97,8 @@ export default function Sidebar({
   // ── Specialty button ─────────────────────────────────────────────────────────
   const SpecialtyButton = ({ category }: { category: string }) => {
     const Icon = SPECIALTY_ICONS[category] || MoreHorizontal;
-    const active = selectedCategory === category;
+    // Never active on Home view — home is a multi-specialty composite, not a category
+    const active = !isHome && selectedCategory === category;
     const isPref = specialties.includes(category);
     return (
       <button

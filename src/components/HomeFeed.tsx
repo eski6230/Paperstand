@@ -1,6 +1,5 @@
-import { useState, useEffect, MutableRefObject } from 'react';
-import { Paper, UserPreferences } from '../types';
-import { fetchLitePapersForCategory } from '../services/gemini';
+import { useState, useEffect } from 'react';
+import { Paper } from '../types';
 import PaperList from './PaperList';
 import { motion } from 'motion/react';
 import { ChevronRight, Shuffle, Sparkles } from 'lucide-react';
@@ -39,95 +38,44 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface SectionData {
-  papers: Paper[];
-  loading: boolean;
-  error: boolean;
-}
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface HomeFeedProps {
   specialties: string[];
-  preferences: UserPreferences;
-  papersCache: MutableRefObject<Record<string, Paper[]>>;
+  /** Per-specialty paper lists — fetched by App, NOT by this component */
+  homePapers: Record<string, Paper[]>;
+  /** Per-specialty loading flags — set by App */
+  homeLoading: Record<string, boolean>;
   readPaperIds: Set<string>;
   onSelectPaper: (paper: Paper) => void;
   onSelectKeyword: (keyword: string) => void;
   onSeeMore: (specialty: string) => void;
-  refreshTrigger?: number;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeFeed({
   specialties,
-  preferences,
-  papersCache,
+  homePapers,
+  homeLoading,
   readPaperIds,
   onSelectPaper,
   onSelectKeyword,
   onSeeMore,
-  refreshTrigger = 0,
 }: HomeFeedProps) {
-  const [sections, setSections] = useState<Record<string, SectionData>>(() =>
-    Object.fromEntries(specialties.map(s => [s, { papers: [], loading: true, error: false }]))
-  );
   const [randomPicks, setRandomPicks] = useState<Paper[]>([]);
   const [randomSeed, setRandomSeed] = useState(0);
 
-  // Recompute random picks whenever any section updates or user shuffles
+  // Recompute random picks whenever homePapers changes or user shuffles
   useEffect(() => {
     const pool: Paper[] = [];
-    (Object.values(sections) as SectionData[]).forEach(s => {
-      if (s.papers.length > 0) pool.push(...s.papers.slice(0, 2));
+    Object.values(homePapers).forEach(papers => {
+      if (papers.length > 0) pool.push(...papers.slice(0, 2));
     });
     if (pool.length >= 3) {
       setRandomPicks(shuffle(pool).slice(0, RANDOM_COUNT));
     }
-  }, [sections, randomSeed]);
-
-  // Fetch all specialties in parallel
-  useEffect(() => {
-    setSections(Object.fromEntries(
-      specialties.map(s => [s, { papers: [], loading: true, error: false }])
-    ));
-    setRandomPicks([]);
-
-    const updateSection = (specialty: string, data: Partial<SectionData>) =>
-      setSections(prev => ({ ...prev, [specialty]: { ...prev[specialty], ...data } }));
-
-    specialties.forEach(async (specialty) => {
-      const cacheKey = `${specialty}-all-suggestion`;
-
-      // Serve from cache immediately
-      if (papersCache.current[cacheKey]?.length > 0) {
-        updateSection(specialty, { papers: papersCache.current[cacheKey], loading: false });
-        return;
-      }
-
-      try {
-        // Lite fetch: PubMed only, instant — no AI calls
-        const papers = await fetchLitePapersForCategory(
-          specialty,
-          undefined,
-          preferences,
-          'suggestion',
-          4,  // fetch 4, display up to SECTION_LIMIT=3
-        );
-
-        if (papers.length > 0) {
-          papersCache.current[cacheKey] = papers;
-          updateSection(specialty, { papers, loading: false, error: false });
-        } else {
-          updateSection(specialty, { loading: false, error: true });
-        }
-      } catch {
-        updateSection(specialty, { loading: false, error: true });
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [specialties.join(','), refreshTrigger]);
+  }, [homePapers, randomSeed]);
 
   // ── Masthead date ────────────────────────────────────────────────────────────
   const today = new Date().toLocaleDateString('ko-KR', {
@@ -152,11 +100,11 @@ export default function HomeFeed({
         </div>
       </div>
 
-      {/* ── Specialty sections ────────────────────────────────────────────────── */}
+      {/* ── Specialty sections — each driven by its own homePapers entry ──────── */}
       {specialties.map((specialty, idx) => {
-        const section = sections[specialty];
-        if (!section) return null;
-        const displayPapers = section.papers.slice(0, SECTION_LIMIT);
+        const papers = homePapers[specialty] ?? [];
+        const isLoading = homeLoading[specialty] ?? true;
+        const displayPapers = papers.slice(0, SECTION_LIMIT);
 
         return (
           <motion.section
@@ -172,7 +120,7 @@ export default function HomeFeed({
                 <h2 className="text-lg font-black tracking-tight text-slate-900 dark:text-slate-50">
                   {specialty}
                 </h2>
-                {section.loading && (
+                {isLoading && (
                   <span className="w-3.5 h-3.5 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin shrink-0" />
                 )}
               </div>
@@ -187,8 +135,8 @@ export default function HomeFeed({
               </button>
             </div>
 
-            {/* Skeleton */}
-            {section.loading && displayPapers.length === 0 ? (
+            {/* Skeleton while loading with no data yet */}
+            {isLoading && displayPapers.length === 0 ? (
               <div className="space-y-3">
                 {[1, 2].map(i => (
                   <div
@@ -207,7 +155,7 @@ export default function HomeFeed({
                   </div>
                 ))}
               </div>
-            ) : section.error ? (
+            ) : !isLoading && papers.length === 0 ? (
               <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 rounded-xl p-4 text-sm text-rose-600 dark:text-rose-400 text-center">
                 논문을 불러오지 못했습니다
               </div>

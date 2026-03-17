@@ -1,52 +1,55 @@
 import { Newspaper, Bookmark, LayoutGrid } from 'lucide-react';
 
 interface BottomNavProps {
-  selectedCategory: string;
-  defaultSpecialty: string; // last/first specialty for "By Specialties" tap
+  isHome: boolean;                              // true when Home view is active
+  selectedCategory: string;                    // only meaningful in category view
+  defaultSpecialty: string;                    // last/first specialty for "전문과" tap
+  onNavigateHome: () => void;
   onSelectCategory: (category: string) => void;
 }
 
-/** True when the selected category is a specialty (not Home, not Subscriptions) */
-function isSpecialtyActive(cat: string): boolean {
-  return cat !== '' && cat !== 'Subscriptions';
-}
-
 export default function BottomNav({
+  isHome,
   selectedCategory,
   defaultSpecialty,
+  onNavigateHome,
   onSelectCategory,
 }: BottomNavProps) {
+  // Active state is derived from isHome + selectedCategory — never coupled to empty string
+  const isSubscriptionsActive = !isHome && selectedCategory === 'Subscriptions';
+  const isSpecialtyActive = !isHome && selectedCategory !== 'Subscriptions';
+
   const tabs = [
     {
-      id:      '',
-      label:   '홈',
-      icon:    Newspaper,
-      active:  selectedCategory === '',
-      target:  '',
+      id:     'home',
+      label:  '홈',
+      icon:   Newspaper,
+      active: isHome,
+      onTap:  onNavigateHome,
     },
     {
-      id:      'Subscriptions',
-      label:   '구독',
-      icon:    Bookmark,
-      active:  selectedCategory === 'Subscriptions',
-      target:  'Subscriptions',
+      id:     'subscriptions',
+      label:  '구독',
+      icon:   Bookmark,
+      active: isSubscriptionsActive,
+      onTap:  () => onSelectCategory('Subscriptions'),
     },
     {
-      id:      '__specialties__',
-      label:   '전문과',
-      icon:    LayoutGrid,
-      active:  isSpecialtyActive(selectedCategory),
-      target:  defaultSpecialty,
+      id:     'specialties',
+      label:  '전문과',
+      icon:   LayoutGrid,
+      active: isSpecialtyActive,
+      onTap:  () => onSelectCategory(defaultSpecialty),
     },
   ] as const;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-30 md:hidden bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 safe-area-inset-bottom">
       <div className="flex items-stretch h-16">
-        {tabs.map(({ id, label, icon: Icon, active, target }) => (
+        {tabs.map(({ id, label, icon: Icon, active, onTap }) => (
           <button
             key={id}
-            onClick={() => onSelectCategory(target)}
+            onClick={onTap}
             className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
               active
                 ? 'text-indigo-600 dark:text-indigo-400'
