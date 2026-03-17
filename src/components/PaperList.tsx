@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Paper } from '../types';
-import { Clock, FileText, ThumbsUp, MessageCircle, CheckCircle2 } from 'lucide-react';
+import { Clock, FileText, ThumbsUp, CheckCircle2, Zap, TrendingUp } from 'lucide-react';
 import { motion } from 'motion/react';
 import { supabase } from '../lib/supabase';
 
 interface VoteSummary {
   voteScore: number;
-  commentCount: number;
 }
 
 interface PaperListProps {
@@ -15,59 +14,234 @@ interface PaperListProps {
   isStreaming?: boolean;
   onSelectPaper: (paper: Paper) => void;
   onSelectKeyword: (keyword: string) => void;
-  readPaperIds?: Set<string>;  // history에서 이미 읽은 논문 ID 세트
+  readPaperIds?: Set<string>;
 }
 
-export default function PaperList({ papers, loading, isStreaming, onSelectPaper, onSelectKeyword, readPaperIds }: PaperListProps) {
+/** shortSummary의 첫 번째 줄 → 핵심 한 줄 헤드라인 */
+function extractHeadline(shortSummary: string): string {
+  const lines = shortSummary
+    .split(/\\n|\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return '';
+  return lines[0].replace(/^[\d]+\.\s*|^[-•*]\s*/, '').trim();
+}
+
+/** 2~3번째 줄 → 미리보기 텍스트 */
+function extractPreview(shortSummary: string): string {
+  const lines = shortSummary
+    .split(/\\n|\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
+  return lines
+    .slice(1, 4)
+    .map(l => l.replace(/^[\d]+\.\s*|^[-•*]\s*/, '').trim())
+    .join('  ·  ');
+}
+
+/** 논문이 최근 60일 이내인지 */
+function isNewPaper(dateStr: string): boolean {
+  try {
+    const parts = dateStr.split(' ');
+    const year = parseInt(parts[parts.length - 1]);
+    const monthMap: Record<string, number> = {
+      Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,
+      Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11,
+    };
+    const month = monthMap[parts[0]] ?? 0;
+    const paperDate = new Date(year, month, 1);
+    const diffDays = (Date.now() - paperDate.getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays <= 60;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Skeleton ────────────────────────────────────────────────────────────────
+
+function PaperCardSkeleton() {
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm animate-pulse">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="h-3 bg-slate-200 dark:bg-slate-700 rounded-full w-16" />
+        <div className="h-3 bg-slate-200 dark:bg-slate-700 rounded-full w-24" />
+      </div>
+      <div className="h-5 bg-slate-200 dark:bg-slate-700 rounded w-11/12 mb-1.5" />
+      <div className="h-5 bg-slate-200 dark:bg-slate-700 rounded w-3/4 mb-4" />
+      <div className="h-px bg-slate-100 dark:bg-slate-800 mb-3" />
+      <div className="h-3.5 bg-slate-200 dark:bg-slate-700 rounded w-5/6 mb-2" />
+      <div className="h-3.5 bg-slate-200 dark:bg-slate-700 rounded w-4/6 mb-2" />
+      <div className="h-3.5 bg-slate-200 dark:bg-slate-700 rounded w-2/3" />
+    </div>
+  );
+}
+
+// ─── Paper Card ───────────────────────────────────────────────────────────────
+
+interface PaperCardProps {
+  paper: Paper;
+  index: number;
+  summary?: VoteSummary;
+  isRead: boolean;
+  onSelectPaper: (paper: Paper) => void;
+  onSelectKeyword: (keyword: string) => void;
+}
+
+function PaperCard({ paper, index, summary, isRead, onSelectPaper, onSelectKeyword }: PaperCardProps) {
+  const headline = extractHeadline(paper.shortSummary || '');
+  const preview = extractPreview(paper.shortSummary || '');
+  const isNew = isNewPaper(paper.date);
+  const isPopular = (summary?.voteScore ?? 0) >= 3;
+  const hasActivity = summary && summary.voteScore !== 0;
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.06, duration: 0.3 }}
+      onClick={() => onSelectPaper(paper)}
+      className={`group relative rounded-2xl border shadow-sm cursor-pointer
+        hover:shadow-md hover:scale-[1.01] transition-all duration-200
+        ${isRead
+          ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800/60 opacity-80 hover:opacity-100'
+          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 dark:hover:border-slate-700'
+        }`}
+    >
+      <div className="p-5">
+
+        {/* ── Row 1: 메타 (최소화) ──────────────────────────── */}
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          {/* 뱃지들 */}
+          {isNew && !isRead && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wider text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/20 px-1.5 py-0.5 rounded-full uppercase">
+              <Zap size={9} /> New
+            </span>
+          )}
+          {isPopular && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wider text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-1.5 py-0.5 rounded-full uppercase">
+              <TrendingUp size={9} /> Popular
+            </span>
+          )}
+          {isRead && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-500/10 px-1.5 py-0.5 rounded-full">
+              <CheckCircle2 size={9} /> 읽음
+            </span>
+          )}
+
+          {/* 저널 + 날짜 (우측 밀기) */}
+          <div className="ml-auto flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+            <span className="font-medium text-indigo-500 dark:text-indigo-400">{paper.journal}</span>
+            <span className="flex items-center gap-1">
+              <Clock size={11} />
+              {paper.date}
+            </span>
+          </div>
+        </div>
+
+        {/* ── Row 2: 핵심 한 줄 요약 (Layer 1 - 최우선) ─────── */}
+        {headline && (
+          <p className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-50 leading-snug mb-1 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 transition-colors">
+            {headline}
+          </p>
+        )}
+
+        {/* 30 sec read 라벨 */}
+        <span className="inline-block text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider uppercase mb-3">
+          30 sec read
+        </span>
+
+        {/* ── 구분선 ──────────────────────────────────────────── */}
+        <div className="h-px bg-slate-100 dark:bg-slate-800 mb-3" />
+
+        {/* ── Row 3: 논문 제목 (Layer 1 - 이차) ──────────────── */}
+        <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400 leading-snug mb-3 line-clamp-2">
+          {paper.title}
+        </h3>
+
+        {/* ── Row 4: 미리보기 요약 (Layer 2) ─────────────────── */}
+        {preview && (
+          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-3 mb-4">
+            {preview}
+          </p>
+        )}
+
+        {/* ── Row 5: 키워드 + 활동 지표 ──────────────────────── */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 키워드 (최대 3개) */}
+          {paper.keywords.slice(0, 3).map(kw => (
+            <button
+              key={kw}
+              onClick={e => { e.stopPropagation(); onSelectKeyword(kw); }}
+              className="text-[11px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-2 py-0.5 rounded-full transition-colors"
+            >
+              {kw}
+            </button>
+          ))}
+          {paper.keywords.length > 3 && (
+            <span className="text-[11px] text-slate-400 dark:text-slate-500">
+              +{paper.keywords.length - 3}
+            </span>
+          )}
+
+          {/* 투표 지표 (우측) */}
+          {hasActivity && (
+            <div className="ml-auto flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                summary!.voteScore > 0
+                  ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
+                  : 'text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10'
+              }`}>
+                <ThumbsUp size={11} />
+                {summary!.voteScore > 0 ? `+${summary!.voteScore}` : summary!.voteScore}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.article>
+  );
+}
+
+// ─── PaperList ────────────────────────────────────────────────────────────────
+
+export default function PaperList({
+  papers,
+  loading,
+  isStreaming,
+  onSelectPaper,
+  onSelectKeyword,
+  readPaperIds,
+}: PaperListProps) {
   const [voteSummaries, setVoteSummaries] = useState<Record<string, VoteSummary>>({});
 
-  // 카드 목록이 바뀔 때 투표수·댓글수 배치 조회
   useEffect(() => {
     if (papers.length === 0) return;
     const ids = papers.map(p => p.id);
 
     (async () => {
-      const [voteRes, communityRes] = await Promise.all([
-        supabase.from('paper_votes').select('paper_id, vote').in('paper_id', ids),
-        supabase.from('community_posts').select('paper_id').in('paper_id', ids),
-      ]);
+      const voteRes = await supabase.from('paper_votes').select('paper_id, vote').in('paper_id', ids);
 
       const summaries: Record<string, VoteSummary> = {};
-      ids.forEach(id => { summaries[id] = { voteScore: 0, commentCount: 0 }; });
+      ids.forEach(id => { summaries[id] = { voteScore: 0 }; });
 
       (voteRes.data || []).forEach(v => {
         if (summaries[v.paper_id]) summaries[v.paper_id].voteScore += v.vote;
-      });
-      (communityRes.data || []).forEach(c => {
-        if (summaries[c.paper_id]) summaries[c.paper_id].commentCount += 1;
       });
 
       setVoteSummaries(summaries);
     })();
   }, [papers]);
 
+  // ── Loading state ──────────────────────────────────────────
   if (loading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm animate-pulse">
-            <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/4 mb-4"></div>
-            <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded w-3/4 mb-4"></div>
-            <div className="flex gap-2 mb-6">
-              <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded-full w-20"></div>
-              <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded-full w-24"></div>
-            </div>
-            <div className="space-y-2">
-              <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-full"></div>
-              <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-5/6"></div>
-              <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-4/6"></div>
-            </div>
-          </div>
-        ))}
+        {[1, 2, 3].map(i => <PaperCardSkeleton key={i} />)}
       </div>
     );
   }
 
+  // ── Empty state ────────────────────────────────────────────
   if (papers.length === 0 && !isStreaming) {
     return (
       <div className="text-center py-20">
@@ -78,120 +252,32 @@ export default function PaperList({ papers, loading, isStreaming, onSelectPaper,
     );
   }
 
+  // ── Paper list ─────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      {papers.map((paper, index) => {
-        const summary = voteSummaries[paper.id];
-        const hasActivity = summary && (summary.voteScore !== 0 || summary.commentCount > 0);
-        const isRead = readPaperIds?.has(paper.id) ?? false;
+    <div className="space-y-4">
+      {papers.map((paper, index) => (
+        <PaperCard
+          key={paper.id}
+          paper={paper}
+          index={index}
+          summary={voteSummaries[paper.id]}
+          isRead={readPaperIds?.has(paper.id) ?? false}
+          onSelectPaper={onSelectPaper}
+          onSelectKeyword={onSelectKeyword}
+        />
+      ))}
 
-        return (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.08 }}
-            key={paper.id}
-            className={`rounded-2xl p-6 border shadow-sm hover:shadow-md transition-all cursor-pointer group ${
-              isRead
-                ? 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800/60 opacity-80 hover:opacity-100'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 dark:hover:border-slate-700'
-            }`}
-            onClick={() => onSelectPaper(paper)}
-          >
-            <div className="flex flex-col md:flex-row gap-6">
-              <div className="flex-1">
-                {/* 메타 */}
-                <div className="flex items-center gap-2 flex-wrap text-sm text-slate-500 dark:text-slate-400 mb-3">
-                  <span className="font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 rounded">
-                    {paper.journal}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Clock size={14} />
-                    <span>{paper.date}</span>
-                  </div>
-                  {/* 읽음 뱃지 */}
-                  {isRead && (
-                    <span className="flex items-center gap-1 text-xs font-medium text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-500/10 px-2 py-0.5 rounded-full">
-                      <CheckCircle2 size={11} />
-                      읽음
-                    </span>
-                  )}
-                  {/* 커뮤니티 활동 뱃지 */}
-                  {hasActivity && (
-                    <div className="flex items-center gap-2 ml-auto">
-                      {summary.voteScore !== 0 && (
-                        <span className={`flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
-                          summary.voteScore > 0
-                            ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10'
-                            : 'text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10'
-                        }`}>
-                          <ThumbsUp size={12} />
-                          {summary.voteScore > 0 ? `+${summary.voteScore}` : summary.voteScore}
-                        </span>
-                      )}
-                      {summary.commentCount > 0 && (
-                        <span className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                          <MessageCircle size={12} />
-                          {summary.commentCount}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* 제목 */}
-                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4 group-hover:text-indigo-700 dark:group-hover:text-indigo-400 transition-colors leading-tight">
-                  {paper.title}
-                </h3>
-
-                {/* 키워드 */}
-                <div className="flex flex-wrap gap-2 mb-5">
-                  {paper.keywords.map((kw) => (
-                    <button
-                      key={kw}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectKeyword(kw);
-                      }}
-                      className="text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-2.5 py-1 rounded-full transition-colors"
-                    >
-                      {kw}
-                    </button>
-                  ))}
-                </div>
-
-                {/* 요약 */}
-                <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-800">
-                  <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
-                    Key Clinical Points
-                  </h4>
-                  <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed space-y-2">
-                    {(paper.shortSummary || '').split(/\\n|\n/).filter(line => line.trim() !== '').map((line, i) => (
-                      <p key={i} className="flex items-start gap-2">
-                        <span className="text-indigo-400 font-bold shrink-0 mt-0.5">•</span>
-                        <span>{line.replace(/^\d+\.\s*/, '')}</span>
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        );
-      })}
-
+      {/* Streaming 중 다음 카드 로딩 표시 */}
       {isStreaming && papers.length < 3 && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm animate-pulse">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-4 h-4 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin"></div>
-            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">AI가 다음 논문을 분석 중입니다...</span>
+            <div className="w-3.5 h-3.5 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              AI가 다음 논문을 분석 중입니다...
+            </span>
           </div>
-          <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/4 mb-4"></div>
-          <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded w-3/4 mb-4"></div>
-          <div className="space-y-2">
-            <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-full"></div>
-            <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-5/6"></div>
-          </div>
+          <div className="h-4 bg-slate-100 dark:bg-slate-800 rounded w-10/12 mb-2 animate-pulse" />
+          <div className="h-4 bg-slate-100 dark:bg-slate-800 rounded w-7/12 animate-pulse" />
         </div>
       )}
     </div>

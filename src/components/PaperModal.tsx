@@ -1,11 +1,10 @@
 import { Paper, RelatedArticle } from '../types';
-import { X, ExternalLink, BookOpen, ChevronRight, ThumbsUp, ThumbsDown, BookmarkPlus, BookmarkCheck, MessageCircle, Send, ArrowLeft, Loader2, Share2 } from 'lucide-react';
+import { X, ExternalLink, BookOpen, ChevronRight, ThumbsUp, ThumbsDown, BookmarkPlus, BookmarkCheck, MessageCircle, Send, ArrowLeft, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState, useRef } from 'react';
 import { askQuestionAboutPaper, fetchSpecificPaperDetails, fetchPaperDetails } from '../services/gemini';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
-import ShareToCommunityModal from './ShareToCommunityModal';
 
 interface PaperModalProps {
   initialPaper: Paper;
@@ -32,8 +31,6 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
   const [userVote, setUserVote] = useState<1 | -1 | null>(null);
   const [isVoting, setIsVoting] = useState(false);
 
-  // Community share modal
-  const [showShareModal, setShowShareModal] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -233,13 +230,6 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
     }
   };
 
-  const handleShareClick = () => {
-    if (!user) {
-      onRequestLogin();
-      return;
-    }
-    setShowShareModal(true);
-  };
 
   return (
     <AnimatePresence>
@@ -378,51 +368,38 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
                     <ExternalLink size={16} />
                   </a>
 
-                  {/* 투표 + 커뮤니티 공유 묶음 */}
-                  <div className="flex items-center gap-2 ml-auto">
-                    {/* 투표 */}
-                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                      <button
-                        onClick={() => user ? handleVoteClick(1) : onRequestLogin()}
-                        title={user ? "유용한 논문" : "로그인 후 투표 가능"}
-                        disabled={isVoting}
-                        className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
-                          userVote === 1
-                            ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20'
-                            : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-40'
-                        }`}
-                      >
-                        <ThumbsUp size={18} />
-                      </button>
-                      <span className={`text-sm font-semibold min-w-[1.5rem] text-center ${
-                        voteCount > 0 ? 'text-emerald-600 dark:text-emerald-400' :
-                        voteCount < 0 ? 'text-rose-600 dark:text-rose-400' :
-                        'text-slate-500 dark:text-slate-400'
-                      }`}>
-                        {voteCount > 0 ? `+${voteCount}` : voteCount}
-                      </span>
-                      <button
-                        onClick={() => user ? handleVoteClick(-1) : onRequestLogin()}
-                        title={user ? "별로인 논문" : "로그인 후 투표 가능"}
-                        disabled={isVoting}
-                        className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
-                          userVote === -1
-                            ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/20'
-                            : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-40'
-                        }`}
-                      >
-                        <ThumbsDown size={18} />
-                      </button>
-                    </div>
-
-                    {/* 커뮤니티 공유 버튼 */}
+                  {/* 투표 */}
+                  <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800 ml-auto">
                     <button
-                      onClick={handleShareClick}
-                      title="커뮤니티에 공유"
-                      className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 rounded-xl transition-colors"
+                      onClick={() => user ? handleVoteClick(1) : onRequestLogin()}
+                      title={user ? "유용한 논문" : "로그인 후 투표 가능"}
+                      disabled={isVoting}
+                      className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
+                        userVote === 1
+                          ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20'
+                          : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-40'
+                      }`}
                     >
-                      <Share2 size={16} />
-                      <span className="hidden sm:inline">공유</span>
+                      <ThumbsUp size={18} />
+                    </button>
+                    <span className={`text-sm font-semibold min-w-[1.5rem] text-center ${
+                      voteCount > 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                      voteCount < 0 ? 'text-rose-600 dark:text-rose-400' :
+                      'text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {voteCount > 0 ? `+${voteCount}` : voteCount}
+                    </span>
+                    <button
+                      onClick={() => user ? handleVoteClick(-1) : onRequestLogin()}
+                      title={user ? "별로인 논문" : "로그인 후 투표 가능"}
+                      disabled={isVoting}
+                      className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
+                        userVote === -1
+                          ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/20'
+                          : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-40'
+                      }`}
+                    >
+                      <ThumbsDown size={18} />
                     </button>
                   </div>
                 </div>
@@ -538,15 +515,6 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
         </motion.div>
       </div>
 
-      {/* 커뮤니티 공유 모달 */}
-      {showShareModal && (
-        <ShareToCommunityModal
-          paper={currentPaper}
-          user={user}
-          onClose={() => setShowShareModal(false)}
-          onSubmit={() => setShowShareModal(false)}
-        />
-      )}
     </AnimatePresence>
   );
 }

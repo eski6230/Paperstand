@@ -17,8 +17,7 @@ import AuthButton from './components/AuthButton';
 import BottomNav from './components/BottomNav';
 import CategoryTabs from './components/CategoryTabs';
 import PrivacyPolicyModal from './components/PrivacyPolicyModal';
-import CommunityTab from './components/CommunityTab';
-import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown, Users } from 'lucide-react';
+import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
@@ -47,7 +46,7 @@ export default function App() {
 
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
-  const [selectedTab, setSelectedTab] = useState<'suggestion' | 'new_journals' | 'community'>('suggestion');
+  const [selectedTab, setSelectedTab] = useState<'suggestion' | 'new_journals'>('suggestion');
   const [papers, setPapers] = useState<Paper[]>([]);
   const papersCache = useRef<Record<string, Paper[]>>({});
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -114,7 +113,7 @@ export default function App() {
   }, [preferences, selectedCategory]);
 
   useEffect(() => {
-    if (!preferences || !selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest' || selectedTab === 'community') return;
+    if (!preferences || !selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest') return;
     
     let isActive = true;
     const cacheKey = `${selectedCategory}-${selectedKeyword || 'all'}-${selectedTab}`;
@@ -466,17 +465,6 @@ export default function App() {
                     >
                       Recently published
                     </button>
-                    <button
-                      onClick={() => setSelectedTab('community')}
-                      className={`flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                        selectedTab === 'community'
-                          ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300'
-                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                      }`}
-                    >
-                      <Users size={14} />
-                      커뮤니티
-                    </button>
                   </div>
                 )}
 
@@ -509,12 +497,7 @@ export default function App() {
                   </div>
                 )}
 
-                {selectedTab === 'community' ? (
-                  <CommunityTab
-                    user={currentUser}
-                    onRequestLogin={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })}
-                  />
-                ) : error ? (
+                {error ? (
                   <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 rounded-2xl p-8 text-center">
                     <p className="text-rose-800 dark:text-rose-300 font-medium mb-4">{error}</p>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
