@@ -9,7 +9,6 @@ import { Paper, UserPreferences } from './types';
 import Sidebar from './components/Sidebar';
 import PaperList from './components/PaperList';
 import PaperModal from './components/PaperModal';
-import Onboarding from './components/Onboarding';
 import MeTab from './components/MeTab';
 import ApiKeyModal from './components/ApiKeyModal';
 import AuthButton from './components/AuthButton';
@@ -20,6 +19,16 @@ import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown } from 'luci
 import { supabase } from './lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
+// 저장된 설정이 없을 때 사용하는 기본값
+const defaultPreferences: UserPreferences = {
+  specialties: ['Cardiology', 'Neurology', 'Oncology'],
+  subTopics: {},
+  journals: [],
+  subscriptions: [],
+  history: [],
+  topicWeights: {},
+};
+
 export default function App() {
   const [preferences, setPreferences] = useState<UserPreferences | null>(() => {
     const saved = localStorage.getItem('medupdate_prefs');
@@ -29,21 +38,24 @@ export default function App() {
         ...parsed,
         subscriptions: parsed.subscriptions || [],
         history: parsed.history || [],
-        topicWeights: parsed.topicWeights || {}
+        topicWeights: parsed.topicWeights || {},
       };
     }
     return null;
   });
 
+  // 저장된 설정이 없으면 defaultPreferences로 동작
+  const activePreferences = preferences ?? defaultPreferences;
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
-      return document.documentElement.classList.contains('dark') || 
+      return document.documentElement.classList.contains('dark') ||
              window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
     return false;
   });
 
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<'suggestion' | 'new_journals'>('suggestion');
   const [papers, setPapers] = useState<Paper[]>([]);
@@ -63,7 +75,6 @@ export default function App() {
   const SPECIAL_CATS = ['Subscriptions', 'History', 'My Interest'];
   const lastSpecialtyRef = useRef<string>('');
 
-  // selectedCategory가 specialty일 때마다 lastSpecialty 갱신
   useEffect(() => {
     if (selectedCategory && !SPECIAL_CATS.includes(selectedCategory)) {
       lastSpecialtyRef.current = selectedCategory;
@@ -90,7 +101,6 @@ export default function App() {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setCurrentUser(session?.user ?? null);
-      // 최초 로그인 시 profiles 테이블에 자동 upsert
       if (event === 'SIGNED_IN' && session?.user) {
         const u = session.user;
         supabase.from('profiles').upsert({
@@ -103,16 +113,17 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Initialize selected category when preferences load
+  // 카테고리 초기화 — activePreferences 기준
   useEffect(() => {
-    if (preferences && preferences.specialties.length > 0 && !selectedCategory) {
-      setSelectedCategory(preferences.specialties[0]);
+    if (activePreferences.specialties.length > 0 && !selectedCategory) {
+      setSelectedCategory(activePreferences.specialties[0]);
     }
-  }, [preferences, selectedCategory]);
+  }, [activePreferences.specialties, selectedCategory]);
 
+  // 논문 fetch
   useEffect(() => {
-    if (!preferences || !selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest') return;
-    
+    if (!selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest') return;
+
     let isActive = true;
     const cacheKey = `${selectedCategory}-${selectedKeyword || 'all'}-${selectedTab}`;
 
@@ -126,47 +137,41 @@ export default function App() {
       setIsStreaming(true);
       setPapers([]);
       setError(null);
-      
-      // Scroll to top immediately when loading starts
+
       if (mainRef.current) {
         mainRef.current.scrollTop = 0;
       }
-      
+
       try {
         const finalPapers = await fetchPapersForCategory(
-          selectedCategory, 
+          selectedCategory,
           selectedKeyword || undefined,
-          preferences,
+          activePreferences,
           (streamedPapers) => {
             if (isActive) {
               setPapers(streamedPapers);
-              if (streamedPapers.length > 0) {
-                setLoading(false);
-              }
+              if (streamedPapers.length > 0) setLoading(false);
             }
           },
           selectedTab
         );
-        
+
         if (finalPapers && finalPapers.length > 0) {
           papersCache.current[cacheKey] = finalPapers;
-          if (isActive) {
-            setPapers(finalPapers);
-          }
+          if (isActive) setPapers(finalPapers);
         } else if (isActive) {
-          setError("논문을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+          setError('논문을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
         }
       } catch (error: any) {
-        console.error("Failed to fetch papers:", error);
+        console.error('Failed to fetch papers:', error);
         if (isActive) {
-          if (error?.message?.includes("API 키가 설정되지 않았습니다")) {
+          if (error?.message?.includes('API 키가 설정되지 않았습니다')) {
             setShowApiKeyModal(true);
-            setError("API 키가 필요합니다. 설정 메뉴에서 API 키를 등록해주세요.");
-          } else if (error?.message?.includes("429") || error?.status === "RESOURCE_EXHAUSTED") {
-            setError("현재 AI 서비스 요청이 너무 많습니다. 잠시(약 1분) 후 다시 시도해주세요.");
+            setError('API 키가 필요합니다. 설정 메뉴에서 API 키를 등록해주세요.');
+          } else if (error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED') {
+            setError('현재 AI 서비스 요청이 너무 많습니다. 잠시(약 1분) 후 다시 시도해주세요.');
           } else {
-            // Show the actual error message for better debugging
-            setError(`오류: ${error.message || "논문을 불러오는 중 알 수 없는 오류가 발생했습니다."}`);
+            setError(`오류: ${error.message || '논문을 불러오는 중 알 수 없는 오류가 발생했습니다.'}`);
           }
         }
       } finally {
@@ -178,13 +183,9 @@ export default function App() {
     };
 
     fetchContent();
-
-    return () => {
-      isActive = false;
-    };
+    return () => { isActive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategory, selectedKeyword, selectedTab, refreshTrigger]); 
-  // Intentionally omitting preferences to prevent re-fetch on vote
+  }, [selectedCategory, selectedKeyword, selectedTab, refreshTrigger]);
 
   const handleRefresh = () => {
     if (!selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest') return;
@@ -214,9 +215,7 @@ export default function App() {
   };
 
   const handleTouchEnd = () => {
-    if (pullDistance > 60 && !loading && !isStreaming) {
-      handleRefresh();
-    }
+    if (pullDistance > 60 && !loading && !isStreaming) handleRefresh();
     setPullDistance(0);
     startY.current = 0;
   };
@@ -226,78 +225,61 @@ export default function App() {
     localStorage.setItem('medupdate_prefs', JSON.stringify(newPrefs));
   };
 
-  const handleOnboardingComplete = (prefs: UserPreferences) => {
-    savePreferences(prefs);
-    if (prefs.specialties.length > 0) {
-      setSelectedCategory(prefs.specialties[0]);
-    }
-  };
-
   const handleResetPreferences = () => {
     localStorage.removeItem('medupdate_prefs');
     setPreferences(null);
     setPapers([]);
     papersCache.current = {};
-    setSelectedCategory("");
+    setSelectedCategory('');
     setSelectedKeyword(null);
   };
 
   const handleOpenPaper = (paper: Paper) => {
     setSelectedPaper(paper);
-    if (preferences) {
-      const newHistory = [paper, ...preferences.history.filter(p => p.id !== paper.id)].slice(0, 50);
-      const newWeights = { ...preferences.topicWeights };
-      paper.keywords.forEach(kw => {
-        newWeights[kw] = (newWeights[kw] || 0) + 0.5;
-      });
-      savePreferences({ ...preferences, history: newHistory, topicWeights: newWeights });
-    }
+    const newHistory = [paper, ...activePreferences.history.filter(p => p.id !== paper.id)].slice(0, 50);
+    const newWeights = { ...activePreferences.topicWeights };
+    paper.keywords.forEach(kw => {
+      newWeights[kw] = (newWeights[kw] || 0) + 0.5;
+    });
+    savePreferences({ ...activePreferences, history: newHistory, topicWeights: newWeights });
   };
 
   const handleVote = (paper: Paper, weightChange: number) => {
-    if (!preferences) return;
-    const newWeights = { ...preferences.topicWeights };
+    const newWeights = { ...activePreferences.topicWeights };
     paper.keywords.forEach(kw => {
       newWeights[kw] = (newWeights[kw] || 0) + weightChange;
     });
-    savePreferences({ ...preferences, topicWeights: newWeights });
+    savePreferences({ ...activePreferences, topicWeights: newWeights });
   };
 
   const handleSubscribe = (keyword: string) => {
-    if (!preferences) return;
-    const isSubscribed = preferences.subscriptions.includes(keyword);
-    const newSubs = isSubscribed 
-      ? preferences.subscriptions.filter(k => k !== keyword)
-      : [...preferences.subscriptions, keyword];
-    
-    savePreferences({ ...preferences, subscriptions: newSubs });
+    const isSubscribed = activePreferences.subscriptions.includes(keyword);
+    const newSubs = isSubscribed
+      ? activePreferences.subscriptions.filter(k => k !== keyword)
+      : [...activePreferences.subscriptions, keyword];
+    savePreferences({ ...activePreferences, subscriptions: newSubs });
   };
 
   const handleBubbleClick = (keyword: string) => {
-    if (!preferences || preferences.specialties.length === 0) return;
-    // Redirect to the first specialty and filter by the clicked keyword
-    setSelectedCategory(preferences.specialties[0]);
+    if (activePreferences.specialties.length === 0) return;
+    setSelectedCategory(activePreferences.specialties[0]);
     setSelectedKeyword(keyword);
   };
-
-  if (!preferences) {
-    return <Onboarding onComplete={handleOnboardingComplete} />;
-  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-950 font-sans transition-colors duration-200">
       {/* Mobile Sidebar Backdrop */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-20 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <Sidebar 
-        specialties={preferences.specialties}
-        selectedCategory={selectedCategory} 
+      <Sidebar
+        specialties={activePreferences.specialties}
+        selectedCategory={selectedCategory}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
           setSelectedKeyword(null);
@@ -314,7 +296,6 @@ export default function App() {
         {/* Header */}
         <header className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 h-14 flex items-center px-4 shrink-0 justify-between transition-colors duration-200 relative z-20">
           <div className="flex items-center gap-2">
-            {/* 햄버거: 데스크톱에서만 표시 (사이드바 없는 레이아웃 대비) */}
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 hidden md:flex transition-colors">
               <Menu size={20} />
             </button>
@@ -335,10 +316,10 @@ export default function App() {
           </div>
         </header>
 
-        {/* 모바일 분과 탭 - 구독/히스토리/마이 탭에서는 숨김 */}
+        {/* 모바일 분과 탭 */}
         {!SPECIAL_CATS.includes(selectedCategory) && (
           <CategoryTabs
-            specialties={preferences.specialties}
+            specialties={activePreferences.specialties}
             selectedCategory={selectedCategory}
             onSelectCategory={(cat) => {
               setSelectedCategory(cat);
@@ -349,7 +330,7 @@ export default function App() {
         )}
 
         {/* Pull to refresh indicator */}
-        <div 
+        <div
           className="absolute top-16 left-0 right-0 flex justify-center items-center overflow-hidden transition-all duration-200 z-0"
           style={{ height: `${pullDistance}px`, opacity: pullDistance / 60 }}
         >
@@ -372,14 +353,14 @@ export default function App() {
             {selectedCategory === 'History' ? (
               <div>
                 <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight mb-6">최근 열람한 논문</h2>
-                {preferences.history.length === 0 ? (
+                {activePreferences.history.length === 0 ? (
                   <div className="text-center py-12 text-slate-500 dark:text-slate-400">
                     아직 열람한 논문이 없습니다.
                   </div>
                 ) : (
-                  <PaperList 
-                    papers={preferences.history} 
-                    loading={false} 
+                  <PaperList
+                    papers={activePreferences.history}
+                    loading={false}
                     isStreaming={false}
                     onSelectPaper={handleOpenPaper}
                     onSelectKeyword={setSelectedKeyword}
@@ -388,8 +369,8 @@ export default function App() {
               </div>
             ) : selectedCategory === 'My Interest' ? (
               <MeTab
-                topicWeights={preferences.topicWeights}
-                historyCount={preferences.history.length}
+                topicWeights={activePreferences.topicWeights}
+                historyCount={activePreferences.history.length}
                 onBubbleClick={handleBubbleClick}
                 user={currentUser}
                 onRequestLogin={() => supabase.auth.signInWithOAuth({
@@ -409,7 +390,7 @@ export default function App() {
                         className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-colors disabled:opacity-50"
                         title="새로운 논문 불러오기"
                       >
-                        <RefreshCw size={20} className={loading || isStreaming ? "animate-spin" : ""} />
+                        <RefreshCw size={20} className={loading || isStreaming ? 'animate-spin' : ''} />
                       </button>
                     </h2>
                     {selectedKeyword && (
@@ -417,7 +398,7 @@ export default function App() {
                         <span className="text-sm text-slate-500 dark:text-slate-400">Filtered by keyword:</span>
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 dark:bg-indigo-500/20 text-indigo-800 dark:text-indigo-300">
                           {selectedKeyword}
-                          <button 
+                          <button
                             onClick={() => setSelectedKeyword(null)}
                             className="ml-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-200"
                           >
@@ -427,8 +408,8 @@ export default function App() {
                       </div>
                     )}
                     <p className="text-slate-500 dark:text-slate-400 mt-2">
-                      {selectedCategory === 'Subscriptions' 
-                        ? '구독하신 주제들의 최신 논문을 모아봅니다.' 
+                      {selectedCategory === 'Subscriptions'
+                        ? '구독하신 주제들의 최신 논문을 모아봅니다.'
                         : '주요 저널의 핵심 논문을 요약해 드립니다.'}
                     </p>
                   </div>
@@ -459,25 +440,25 @@ export default function App() {
                   </div>
                 )}
 
-                {selectedCategory === 'Subscriptions' && preferences.subscriptions.length > 0 && (
+                {selectedCategory === 'Subscriptions' && activePreferences.subscriptions.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-6">
                     <button
                       onClick={() => setSelectedKeyword(null)}
                       className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                        !selectedKeyword 
-                          ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' 
+                        !selectedKeyword
+                          ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900'
                           : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                       }`}
                     >
                       All Subscriptions
                     </button>
-                    {preferences.subscriptions.map(sub => (
+                    {activePreferences.subscriptions.map(sub => (
                       <button
                         key={sub}
                         onClick={() => setSelectedKeyword(sub)}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1 ${
-                          selectedKeyword === sub 
-                            ? 'bg-indigo-600 text-white' 
+                          selectedKeyword === sub
+                            ? 'bg-indigo-600 text-white'
                             : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20'
                         }`}
                       >
@@ -492,14 +473,14 @@ export default function App() {
                   <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 rounded-2xl p-8 text-center">
                     <p className="text-rose-800 dark:text-rose-300 font-medium mb-4">{error}</p>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                      <button 
+                      <button
                         onClick={handleRefresh}
                         className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-medium transition-colors w-full sm:w-auto"
                       >
                         다시 시도하기
                       </button>
-                      {error.includes("API 키") && (
-                        <button 
+                      {error.includes('API 키') && (
+                        <button
                           onClick={() => setShowApiKeyModal(true)}
                           className="px-6 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl text-sm font-medium transition-colors w-full sm:w-auto"
                         >
@@ -508,7 +489,7 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                ) : selectedCategory === 'Subscriptions' && preferences.subscriptions.length === 0 ? (
+                ) : selectedCategory === 'Subscriptions' && activePreferences.subscriptions.length === 0 ? (
                   <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
                     <Bookmark size={48} className="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">구독 중인 주제가 없습니다</h3>
@@ -523,7 +504,7 @@ export default function App() {
                     isStreaming={isStreaming}
                     onSelectPaper={handleOpenPaper}
                     onSelectKeyword={setSelectedKeyword}
-                    readPaperIds={new Set(preferences.history.map(p => p.id))}
+                    readPaperIds={new Set(activePreferences.history.map(p => p.id))}
                   />
                 )}
               </>
@@ -560,13 +541,13 @@ export default function App() {
               선호하는 주제와 논문을 다시 선택하시겠습니까? 기존 설정은 초기화됩니다.
             </p>
             <div className="flex justify-end gap-3">
-              <button 
+              <button
                 onClick={() => setShowResetConfirm(false)}
                 className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
               >
                 취소
               </button>
-              <button 
+              <button
                 onClick={() => {
                   setShowResetConfirm(false);
                   handleResetPreferences();
@@ -591,7 +572,7 @@ export default function App() {
           }}
           onVote={handleVote}
           onSubscribe={handleSubscribe}
-          subscriptions={preferences.subscriptions}
+          subscriptions={activePreferences.subscriptions}
           user={currentUser}
           onRequestLogin={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })}
         />
@@ -611,7 +592,7 @@ export default function App() {
       {/* 모바일 바텀 네비게이션 */}
       <BottomNav
         selectedCategory={selectedCategory}
-        homeCategory={lastSpecialtyRef.current || preferences.specialties[0] || ''}
+        homeCategory={lastSpecialtyRef.current || activePreferences.specialties[0] || ''}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
           setSelectedKeyword(null);
@@ -622,5 +603,3 @@ export default function App() {
     </div>
   );
 }
-
-
