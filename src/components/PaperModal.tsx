@@ -2,7 +2,7 @@ import { Paper, RelatedArticle } from '../types';
 import { X, ExternalLink, BookOpen, ChevronRight, ThumbsUp, ThumbsDown, BookmarkPlus, BookmarkCheck, MessageCircle, Send, ArrowLeft, Loader2, Lightbulb, FlaskConical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState, useRef } from 'react';
-import { askQuestionAboutPaper, fetchSpecificPaperDetails, fetchPaperDetails } from '../services/gemini';
+import { askQuestionAboutPaper, fetchSpecificPaperDetails, fetchPaperDetails, generatePaperSummaries } from '../services/gemini';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
 
@@ -15,9 +15,11 @@ interface PaperModalProps {
   subscriptions: string[];
   user: User | null;
   onRequestLogin: () => void;
+  /** Called when AI summaries are generated so the parent can cache the result */
+  onSummarized?: (paperId: string, data: Partial<Paper>) => void;
 }
 
-export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onVote, onSubscribe, subscriptions, user, onRequestLogin }: PaperModalProps) {
+export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onVote, onSubscribe, subscriptions, user, onRequestLogin, onSummarized }: PaperModalProps) {
   const [paperStack, setPaperStack] = useState<Paper[]>([initialPaper]);
   const [isFetchingRelated, setIsFetchingRelated] = useState(false);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
@@ -74,20 +76,29 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
 
     // Load details if missing
     async function loadDetails() {
-      if (!currentPaper.detailedSummary && !isLoadingDetails) {
-        setIsLoadingDetails(true);
-        try {
-          const details = await fetchPaperDetails(currentPaper);
-          setPaperStack(prev => {
-            const newStack = [...prev];
-            newStack[newStack.length - 1] = { ...currentPaper, ...details };
-            return newStack;
-          });
-        } catch (e) {
-          console.error("Failed to fetch details", e);
-        } finally {
-          setIsLoadingDetails(false);
+      if (currentPaper.detailedSummary || isLoadingDetails) return;
+      setIsLoadingDetails(true);
+      try {
+        let enriched: Partial<Paper>;
+
+        if (!currentPaper.shortSummary) {
+          // Lite paper: generate ALL summaries from abstract
+          enriched = await generatePaperSummaries(currentPaper);
+        } else {
+          // Has shortSummary: only generate detailedSummary + relatedArticles
+          enriched = await fetchPaperDetails(currentPaper);
         }
+
+        setPaperStack(prev => {
+          const newStack = [...prev];
+          newStack[newStack.length - 1] = { ...newStack[newStack.length - 1], ...enriched };
+          return newStack;
+        });
+        onSummarized?.(currentPaper.id, enriched);
+      } catch (e) {
+        console.error('Failed to load details', e);
+      } finally {
+        setIsLoadingDetails(false);
       }
     }
     loadDetails();

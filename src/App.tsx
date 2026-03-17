@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchPapersForCategory } from './services/gemini';
+import { fetchLitePapersForCategory } from './services/gemini';
 import { Paper, UserPreferences } from './types';
 import Sidebar from './components/Sidebar';
 import PaperList from './components/PaperList';
@@ -60,6 +60,8 @@ export default function App() {
   const [selectedTab, setSelectedTab] = useState<'suggestion' | 'new_journals'>('suggestion');
   const [papers, setPapers] = useState<Paper[]>([]);
   const papersCache = useRef<Record<string, Paper[]>>({});
+  // Caches AI-generated summaries keyed by paper.id so re-opens are instant
+  const summaryCache = useRef<Record<string, Partial<Paper>>>({});
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [loading, setLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -126,56 +128,47 @@ export default function App() {
     const cacheKey = `${selectedCategory}-${selectedKeyword || 'all'}-${selectedTab}`;
 
     const fetchContent = async () => {
-      if (papersCache.current[cacheKey] && papersCache.current[cacheKey].length > 0) {
+      if (papersCache.current[cacheKey]?.length > 0) {
         setPapers(papersCache.current[cacheKey]);
         return;
       }
 
       setLoading(true);
-      setIsStreaming(true);
+      setIsStreaming(false);  // no streaming — lite fetch is instant
       setPapers([]);
       setError(null);
 
-      if (mainRef.current) {
-        mainRef.current.scrollTop = 0;
-      }
+      if (mainRef.current) mainRef.current.scrollTop = 0;
 
       try {
-        const finalPapers = await fetchPapersForCategory(
+        // Lite fetch: PubMed only, zero AI calls on initial load
+        const results = await fetchLitePapersForCategory(
           selectedCategory,
           selectedKeyword || undefined,
           activePreferences,
-          (streamedPapers) => {
-            if (isActive) {
-              setPapers(streamedPapers);
-              if (streamedPapers.length > 0) setLoading(false);
-            }
-          },
-          selectedTab
+          selectedTab,
+          7,
         );
 
-        if (finalPapers && finalPapers.length > 0) {
-          papersCache.current[cacheKey] = finalPapers;
-          if (isActive) setPapers(finalPapers);
+        if (results.length > 0) {
+          // Enrich with any cached AI summaries
+          const enriched = results.map(p => ({
+            ...p,
+            ...(summaryCache.current[p.id] ?? {}),
+          }));
+          papersCache.current[cacheKey] = enriched;
+          if (isActive) setPapers(enriched);
         } else if (isActive) {
           setError('논문을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
         }
-      } catch (error: any) {
-        console.error('Failed to fetch papers:', error);
+      } catch (err: any) {
+        console.error('Failed to fetch papers:', err);
         if (isActive) {
-          if (error?.message?.includes('API 키가 설정되지 않았습니다')) {
-            setShowApiKeyModal(true);
-            setError('API 키가 필요합니다. 설정 메뉴에서 API 키를 등록해주세요.');
-          } else if (error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED') {
-            setError('현재 AI 서비스 요청이 너무 많습니다. 잠시(약 1분) 후 다시 시도해주세요.');
-          } else {
-            setError(`오류: ${error.message || '논문을 불러오는 중 알 수 없는 오류가 발생했습니다.'}`);
-          }
+          setError(`오류: ${err.message || '논문을 불러오는 중 알 수 없는 오류가 발생했습니다.'}`);
         }
       } finally {
         if (isActive) {
           setLoading(false);
-          setIsStreaming(false);
         }
       }
     };
@@ -240,13 +233,26 @@ export default function App() {
   };
 
   const handleOpenPaper = (paper: Paper) => {
-    setSelectedPaper(paper);
-    const newHistory = [paper, ...activePreferences.history.filter(p => p.id !== paper.id)].slice(0, 50);
+    // Enrich with cached AI summaries so re-opens show content instantly
+    const enriched: Paper = { ...paper, ...(summaryCache.current[paper.id] ?? {}) };
+    setSelectedPaper(enriched);
+    const newHistory = [enriched, ...activePreferences.history.filter(p => p.id !== paper.id)].slice(0, 50);
     const newWeights = { ...activePreferences.topicWeights };
-    paper.keywords.forEach(kw => {
+    (enriched.keywords.length > 0 ? enriched.keywords : paper.keywords).forEach(kw => {
       newWeights[kw] = (newWeights[kw] || 0) + 0.5;
     });
     savePreferences({ ...activePreferences, history: newHistory, topicWeights: newWeights });
+  };
+
+  /** Called by PaperModal once AI summaries are ready — cache + update live modal */
+  const handleSummarized = (paperId: string, data: Partial<Paper>) => {
+    summaryCache.current[paperId] = { ...(summaryCache.current[paperId] ?? {}), ...data };
+    // Update the open modal if it's still showing the same paper
+    setSelectedPaper(prev =>
+      prev && prev.id === paperId ? { ...prev, ...data } : prev
+    );
+    // Also update the paper in the current list so the card reflects summary
+    setPapers(prev => prev.map(p => p.id === paperId ? { ...p, ...data } : p));
   };
 
   const handleVote = (paper: Paper, weightChange: number) => {
@@ -556,6 +562,7 @@ export default function App() {
           subscriptions={activePreferences.subscriptions}
           user={currentUser}
           onRequestLogin={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })}
+          onSummarized={handleSummarized}
         />
       )}
 

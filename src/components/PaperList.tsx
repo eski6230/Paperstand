@@ -17,26 +17,31 @@ interface PaperListProps {
   readPaperIds?: Set<string>;
 }
 
-/** shortSummary의 첫 번째 줄 → 핵심 한 줄 헤드라인 */
-function extractHeadline(shortSummary: string): string {
-  const lines = shortSummary
-    .split(/\\n|\n/)
-    .map(l => l.trim())
-    .filter(Boolean);
-  if (lines.length === 0) return '';
-  return lines[0].replace(/^[\d]+\.\s*|^[-•*]\s*/, '').trim();
+/** shortSummary 첫 줄 → 헤드라인. 없으면 abstract 첫 문장 fallback. */
+function extractHeadline(shortSummary: string, abstract?: string): string {
+  if (shortSummary) {
+    const lines = shortSummary.split(/\\n|\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length > 0) return lines[0].replace(/^[\d]+\.\s*|^[-•*]\s*/, '').trim();
+  }
+  if (abstract) {
+    const clean = abstract.replace(/^(BACKGROUND|OBJECTIVE|AIMS?|PURPOSE|INTRODUCTION|CONTEXT)[:\s]*/i, '').trim();
+    const first = clean.split(/(?<=[.!?])\s+/)[0] || clean;
+    return first.length > 130 ? first.slice(0, 130) + '…' : first;
+  }
+  return '';
 }
 
-/** 2~3번째 줄 → 미리보기 텍스트 */
-function extractPreview(shortSummary: string): string {
-  const lines = shortSummary
-    .split(/\\n|\n/)
-    .map(l => l.trim())
-    .filter(Boolean);
-  return lines
-    .slice(1, 4)
-    .map(l => l.replace(/^[\d]+\.\s*|^[-•*]\s*/, '').trim())
-    .join('  ·  ');
+/** shortSummary 2~4줄 → 미리보기. 없으면 abstract 앞부분 fallback. */
+function extractPreview(shortSummary: string, abstract?: string): string {
+  if (shortSummary) {
+    const lines = shortSummary.split(/\\n|\n/).map(l => l.trim()).filter(Boolean);
+    return lines.slice(1, 4).map(l => l.replace(/^[\d]+\.\s*|^[-•*]\s*/, '').trim()).join('  ·  ');
+  }
+  if (abstract) {
+    const t = abstract.slice(0, 220);
+    return t.length < abstract.length ? t + '…' : t;
+  }
+  return '';
 }
 
 /** 논문이 최근 60일 이내인지 */
@@ -88,8 +93,9 @@ interface PaperCardProps {
 }
 
 function PaperCard({ paper, index, summary, isRead, onSelectPaper, onSelectKeyword }: PaperCardProps) {
-  const headline = extractHeadline(paper.shortSummary || '');
-  const preview = extractPreview(paper.shortSummary || '');
+  const isLite = !paper.shortSummary;                         // no AI summary yet
+  const headline = extractHeadline(paper.shortSummary || '', paper.abstract);
+  const preview  = extractPreview(paper.shortSummary || '', paper.abstract);
   const isNew = isNewPaper(paper.date);
   const isPopular = (summary?.voteScore ?? 0) >= 3;
   const hasActivity = summary && summary.voteScore !== 0;
@@ -145,9 +151,13 @@ function PaperCard({ paper, index, summary, isRead, onSelectPaper, onSelectKeywo
           </p>
         )}
 
-        {/* 30 sec read 라벨 */}
-        <span className="inline-block text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider uppercase mb-3">
-          30 sec read
+        {/* 라벨: AI 요약 있으면 "30 sec read", 없으면 "탭하여 AI 요약 보기" */}
+        <span className={`inline-block text-[10px] font-semibold tracking-wider uppercase mb-3 ${
+          isLite
+            ? 'text-indigo-400 dark:text-indigo-500'
+            : 'text-slate-400 dark:text-slate-500'
+        }`}>
+          {isLite ? '탭하여 AI 요약 보기 ✦' : '30 sec read'}
         </span>
 
         {/* ── 구분선 ──────────────────────────────────────────── */}

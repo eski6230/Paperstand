@@ -368,6 +368,144 @@ ${paperContext}`;
   });
 }
 
+// ─── Lite data layer (PubMed only, no AI) ────────────────────────────────────
+
+/**
+ * Fast paper list using PubMed only — zero AI calls.
+ * Cards display the raw abstract as fallback headline/preview.
+ */
+export async function fetchLitePapersForCategory(
+  category: string,
+  keyword?: string,
+  preferences?: UserPreferences,
+  tab: 'suggestion' | 'new_journals' = 'suggestion',
+  maxResults = 6,
+): Promise<Paper[]> {
+  const currentYear = new Date().getFullYear();
+
+  let baseQuery: string;
+  if (category === 'Subscriptions') {
+    const subs = preferences?.subscriptions ?? [];
+    baseQuery = keyword
+      ? keyword
+      : subs.length > 0
+        ? subs.slice(0, 3).join(' OR ')
+        : 'internal medicine randomized controlled trial';
+  } else {
+    baseQuery = PUBMED_QUERIES[category] || `${category}[MeSH Terms]`;
+    if (keyword) baseQuery = `${keyword} AND (${baseQuery})`;
+    if (tab === 'new_journals') {
+      baseQuery += ` AND ("${currentYear}"[Date - Publication] : "${currentYear}"[Date - Publication])`;
+    }
+  }
+
+  try {
+    const results = await searchPubMed(baseQuery, maxResults);
+    return results.map(p => ({
+      id: `pubmed-${p.pmid}`,
+      title: p.title,
+      journal: p.journal,
+      date: p.date,
+      keywords: [],
+      shortSummary: '',        // empty — AI generates on demand in PaperModal
+      abstract: p.abstract,
+      url: p.url,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ─── On-demand AI summarisation ──────────────────────────────────────────────
+
+/**
+ * Generate shortSummary + detailedSummary + keywords + relatedArticles for a
+ * single lite paper.  Called the first time a user opens a paper in PaperModal.
+ */
+export async function generatePaperSummaries(paper: Paper): Promise<{
+  shortSummary: string;
+  detailedSummary: string;
+  keywords: string[];
+  relatedArticles: RelatedArticle[];
+}> {
+  const ai = getAI();
+
+  const context = paper.abstract
+    ? `Abstract: ${paper.abstract}`
+    : `Title: ${paper.title}\nJournal: ${paper.journal}`;
+
+  const prompt = `You are an expert medical AI assistant for a Korean Internal Medicine physician.
+Analyze the following paper and generate concise, clinically useful summaries.
+
+Title: ${paper.title}
+Journal: ${paper.journal}
+Date: ${paper.date}
+${context}
+
+Generate:
+1. shortSummary: 3 key clinical bullet points in Korean, separated by \\n. Mix English medical terms naturally.
+2. detailedSummary: Abstract-level Korean summary with background, key findings, and clinical takeaway. Add \\n between sections.
+3. keywords: 2–4 keywords starting with # (e.g. "#HFrEF", "#SGLT2_inhibitor").
+4. relatedSearchTerms: 2 specific PubMed search queries (3–5 medical terms each) to find related papers.`;
+
+  return withRetry(async () => {
+    const response = await ai.models.generateContent({
+      model: 'gemini-flash-latest',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            shortSummary:       { type: Type.STRING },
+            detailedSummary:    { type: Type.STRING },
+            keywords:           { type: Type.ARRAY, items: { type: Type.STRING } },
+            relatedSearchTerms: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: ['shortSummary', 'detailedSummary', 'keywords', 'relatedSearchTerms'],
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error('No response from Gemini');
+    const result = JSON.parse(text);
+
+    // Fetch related articles from PubMed
+    const relatedArticles: RelatedArticle[] = [];
+    await Promise.all(
+      (result.relatedSearchTerms as string[]).map(async (term: string) => {
+        const hits = await searchPubMed(term, 3);
+        const filtered = hits.filter(p =>
+          p.title.toLowerCase() !== paper.title.toLowerCase() && p.pmid
+        );
+        if (filtered.length > 0) {
+          const p = filtered[0];
+          relatedArticles.push({
+            title: p.title,
+            type: 'Related Paper',
+            journal: p.journal,
+            shortDescription: p.abstract
+              ? p.abstract.slice(0, 150) + '...'
+              : `${p.journal}에 게재된 관련 논문입니다.`,
+            pmid: p.pmid,
+            url: p.url,
+          });
+        }
+      })
+    );
+
+    return {
+      shortSummary:    result.shortSummary,
+      detailedSummary: result.detailedSummary,
+      keywords:        result.keywords,
+      relatedArticles: relatedArticles.slice(0, 2),
+    };
+  });
+}
+
+// ─── Legacy AI-heavy list fetch (kept for backward compat) ───────────────────
+
 export async function askQuestionAboutPaper(paper: Paper, question: string): Promise<{ answer: string, foundInPaper: boolean }> {
   const ai = getAI();
   const prompt = `You are an expert medical AI assistant. The user (a physician) is reading the following paper summary:

@@ -1,6 +1,6 @@
 import { useState, useEffect, MutableRefObject } from 'react';
 import { Paper, UserPreferences } from '../types';
-import { fetchPapersForCategory } from '../services/gemini';
+import { fetchLitePapersForCategory } from '../services/gemini';
 import PaperList from './PaperList';
 import { motion } from 'motion/react';
 import { ChevronRight, Shuffle, Sparkles } from 'lucide-react';
@@ -107,17 +107,16 @@ export default function HomeFeed({
       }
 
       try {
-        const papers = await fetchPapersForCategory(
+        // Lite fetch: PubMed only, instant — no AI calls
+        const papers = await fetchLitePapersForCategory(
           specialty,
           undefined,
           preferences,
-          (streamed) => {
-            if (streamed.length > 0) updateSection(specialty, { papers: streamed, loading: false });
-          },
           'suggestion',
+          4,  // fetch 4, display up to SECTION_LIMIT=3
         );
 
-        if (papers && papers.length > 0) {
+        if (papers.length > 0) {
           papersCache.current[cacheKey] = papers;
           updateSection(specialty, { papers, loading: false, error: false });
         } else {

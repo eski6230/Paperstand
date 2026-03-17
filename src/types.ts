@@ -15,6 +15,7 @@ export interface Paper {
   keywords: string[];
   shortSummary: string;
   detailedSummary?: string;
+  abstract?: string;           // raw PubMed abstract (lite papers)
   url: string;
   relatedArticles?: RelatedArticle[];
   imageCategory?: 'endoscopy' | 'radiology' | 'surgery' | 'laboratory' | 'clinical' | 'none';
