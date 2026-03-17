@@ -8,6 +8,7 @@ import { fetchPapersForCategory } from './services/gemini';
 import { Paper, UserPreferences } from './types';
 import Sidebar from './components/Sidebar';
 import PaperList from './components/PaperList';
+import HomeFeed from './components/HomeFeed';
 import PaperModal from './components/PaperModal';
 import MeTab from './components/MeTab';
 import ApiKeyModal from './components/ApiKeyModal';
@@ -71,15 +72,7 @@ export default function App() {
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  // 마지막으로 선택한 specialty 추적 (홈 버튼용)
   const SPECIAL_CATS = ['Subscriptions', 'History', 'My Interest'];
-  const lastSpecialtyRef = useRef<string>('');
-
-  useEffect(() => {
-    if (selectedCategory && !SPECIAL_CATS.includes(selectedCategory)) {
-      lastSpecialtyRef.current = selectedCategory;
-    }
-  }, [selectedCategory]);
 
   // Pull to refresh state
   const mainRef = useRef<HTMLElement>(null);
@@ -113,12 +106,8 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 카테고리 초기화 — activePreferences 기준
-  useEffect(() => {
-    if (activePreferences.specialties.length > 0 && !selectedCategory) {
-      setSelectedCategory(activePreferences.specialties[0]);
-    }
-  }, [activePreferences.specialties, selectedCategory]);
+  // selectedCategory === '' → home feed (mixed newspaper view)
+  // No auto-redirect to first specialty; let the user land on HomeFeed.
 
   // 논문 fetch
   useEffect(() => {
@@ -188,7 +177,15 @@ export default function App() {
   }, [selectedCategory, selectedKeyword, selectedTab, refreshTrigger]);
 
   const handleRefresh = () => {
-    if (!selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest') return;
+    if (selectedCategory === '') {
+      // Home feed: clear all specialty caches
+      activePreferences.specialties.forEach(s => {
+        delete papersCache.current[`${s}-all-suggestion`];
+      });
+      setRefreshTrigger(prev => prev + 1);
+      return;
+    }
+    if (selectedCategory === 'History' || selectedCategory === 'My Interest') return;
     const cacheKey = `${selectedCategory}-${selectedKeyword || 'all'}-${selectedTab}`;
     delete papersCache.current[cacheKey];
     setRefreshTrigger(prev => prev + 1);
@@ -316,8 +313,8 @@ export default function App() {
           </div>
         </header>
 
-        {/* 모바일 분과 탭 */}
-        {!SPECIAL_CATS.includes(selectedCategory) && (
+        {/* 모바일 분과 탭 — 홈·특수 탭에서는 숨김 */}
+        {selectedCategory !== '' && !SPECIAL_CATS.includes(selectedCategory) && (
           <CategoryTabs
             specialties={activePreferences.specialties}
             selectedCategory={selectedCategory}
@@ -350,7 +347,23 @@ export default function App() {
           style={{ transform: `translateY(${pullDistance}px)` }}
         >
           <div className="max-w-4xl mx-auto">
-            {selectedCategory === 'History' ? (
+            {selectedCategory === '' ? (
+              /* ── Home: newspaper mixed feed ─────────────────────────────── */
+              <HomeFeed
+                specialties={activePreferences.specialties}
+                preferences={activePreferences}
+                papersCache={papersCache}
+                readPaperIds={new Set(activePreferences.history.map(p => p.id))}
+                onSelectPaper={handleOpenPaper}
+                onSelectKeyword={setSelectedKeyword}
+                onSeeMore={(specialty) => {
+                  setSelectedCategory(specialty);
+                  setSelectedKeyword(null);
+                  setSelectedTab('suggestion');
+                }}
+                refreshTrigger={refreshTrigger}
+              />
+            ) : selectedCategory === 'History' ? (
               <div>
                 <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight mb-6">최근 열람한 논문</h2>
                 {activePreferences.history.length === 0 ? (
@@ -592,7 +605,6 @@ export default function App() {
       {/* 모바일 바텀 네비게이션 */}
       <BottomNav
         selectedCategory={selectedCategory}
-        homeCategory={lastSpecialtyRef.current || activePreferences.specialties[0] || ''}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
           setSelectedKeyword(null);
