@@ -10,7 +10,6 @@ import Sidebar from './components/Sidebar';
 import PaperList from './components/PaperList';
 import HomeFeed from './components/HomeFeed';
 import PaperModal from './components/PaperModal';
-import MeTab from './components/MeTab';
 import ApiKeyModal from './components/ApiKeyModal';
 import AuthButton from './components/AuthButton';
 import BottomNav from './components/BottomNav';
@@ -72,7 +71,16 @@ export default function App() {
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  const SPECIAL_CATS = ['Subscriptions', 'History', 'My Interest'];
+  // Non-specialty nav states (no CategoryTabs / no paper fetch for these)
+  const SPECIAL_CATS = ['Subscriptions'];
+
+  // Track last visited specialty for "By Specialties" BottomNav tap
+  const lastSpecialtyRef = useRef<string>('');
+  useEffect(() => {
+    if (selectedCategory && !SPECIAL_CATS.includes(selectedCategory)) {
+      lastSpecialtyRef.current = selectedCategory;
+    }
+  }, [selectedCategory]);
 
   // Pull to refresh state
   const mainRef = useRef<HTMLElement>(null);
@@ -111,7 +119,8 @@ export default function App() {
 
   // 논문 fetch
   useEffect(() => {
-    if (!selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest') return;
+    // Skip for Home feed (handled by HomeFeed component directly)
+    if (!selectedCategory) return;
 
     let isActive = true;
     const cacheKey = `${selectedCategory}-${selectedKeyword || 'all'}-${selectedTab}`;
@@ -185,7 +194,6 @@ export default function App() {
       setRefreshTrigger(prev => prev + 1);
       return;
     }
-    if (selectedCategory === 'History' || selectedCategory === 'My Interest') return;
     const cacheKey = `${selectedCategory}-${selectedKeyword || 'all'}-${selectedTab}`;
     delete papersCache.current[cacheKey];
     setRefreshTrigger(prev => prev + 1);
@@ -257,12 +265,6 @@ export default function App() {
     savePreferences({ ...activePreferences, subscriptions: newSubs });
   };
 
-  const handleBubbleClick = (keyword: string) => {
-    if (activePreferences.specialties.length === 0) return;
-    setSelectedCategory(activePreferences.specialties[0]);
-    setSelectedKeyword(keyword);
-  };
-
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-slate-950 font-sans transition-colors duration-200">
       {/* Mobile Sidebar Backdrop */}
@@ -313,7 +315,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* 모바일 분과 탭 — 홈·특수 탭에서는 숨김 */}
+        {/* 모바일 분과 탭 — 전문과 뷰에서만 표시 */}
         {selectedCategory !== '' && !SPECIAL_CATS.includes(selectedCategory) && (
           <CategoryTabs
             specialties={activePreferences.specialties}
@@ -363,96 +365,60 @@ export default function App() {
                 }}
                 refreshTrigger={refreshTrigger}
               />
-            ) : selectedCategory === 'History' ? (
-              <div>
-                <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight mb-6">최근 열람한 논문</h2>
-                {activePreferences.history.length === 0 ? (
-                  <div className="text-center py-12 text-slate-500 dark:text-slate-400">
-                    아직 열람한 논문이 없습니다.
-                  </div>
-                ) : (
-                  <PaperList
-                    papers={activePreferences.history}
-                    loading={false}
-                    isStreaming={false}
-                    onSelectPaper={handleOpenPaper}
-                    onSelectKeyword={setSelectedKeyword}
-                  />
-                )}
-              </div>
-            ) : selectedCategory === 'My Interest' ? (
-              <MeTab
-                topicWeights={activePreferences.topicWeights}
-                historyCount={activePreferences.history.length}
-                onBubbleClick={handleBubbleClick}
-                user={currentUser}
-                onRequestLogin={() => supabase.auth.signInWithOAuth({
-                  provider: 'google',
-                  options: { redirectTo: window.location.origin },
-                })}
-              />
             ) : (
+              /* ── Subscriptions or Specialty category view ────────────────── */
               <>
-                <div className="mb-8 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-3">
-                      {selectedCategory}
-                      <button
-                        onClick={handleRefresh}
-                        disabled={loading || isStreaming}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-colors disabled:opacity-50"
-                        title="새로운 논문 불러오기"
-                      >
-                        <RefreshCw size={20} className={loading || isStreaming ? 'animate-spin' : ''} />
-                      </button>
-                    </h2>
-                    {selectedKeyword && (
-                      <div className="flex items-center gap-2 mt-3">
-                        <span className="text-sm text-slate-500 dark:text-slate-400">Filtered by keyword:</span>
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 dark:bg-indigo-500/20 text-indigo-800 dark:text-indigo-300">
-                          {selectedKeyword}
-                          <button
-                            onClick={() => setSelectedKeyword(null)}
-                            className="ml-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-200"
-                          >
-                            &times;
-                          </button>
-                        </span>
-                      </div>
-                    )}
-                    <p className="text-slate-500 dark:text-slate-400 mt-2">
-                      {selectedCategory === 'Subscriptions'
-                        ? '구독하신 주제들의 최신 논문을 모아봅니다.'
-                        : '주요 저널의 핵심 논문을 요약해 드립니다.'}
-                    </p>
-                  </div>
+                {/* Page heading */}
+                <div className="mb-6">
+                  <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-3">
+                    {selectedCategory === 'Subscriptions' ? '구독' : selectedCategory}
+                    <button
+                      onClick={handleRefresh}
+                      disabled={loading || isStreaming}
+                      className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-colors disabled:opacity-50"
+                      title="새로운 논문 불러오기"
+                    >
+                      <RefreshCw size={20} className={loading || isStreaming ? 'animate-spin' : ''} />
+                    </button>
+                  </h2>
+
+                  {/* Keyword filter badge */}
+                  {selectedKeyword && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <span className="text-sm text-slate-500 dark:text-slate-400">키워드 필터:</span>
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 dark:bg-indigo-500/20 text-indigo-800 dark:text-indigo-300">
+                        {selectedKeyword}
+                        <button
+                          onClick={() => setSelectedKeyword(null)}
+                          className="ml-2 text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-200"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {selectedCategory !== 'Subscriptions' && selectedCategory !== 'History' && selectedCategory !== 'My Interest' && (
+                {/* Suggestion / Recently published tabs (specialty view only) */}
+                {selectedCategory !== 'Subscriptions' && (
                   <div className="flex bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl mb-6 w-fit">
-                    <button
-                      onClick={() => setSelectedTab('suggestion')}
-                      className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${
-                        selectedTab === 'suggestion'
-                          ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300'
-                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                      }`}
-                    >
-                      Suggestion
-                    </button>
-                    <button
-                      onClick={() => setSelectedTab('new_journals')}
-                      className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${
-                        selectedTab === 'new_journals'
-                          ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300'
-                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                      }`}
-                    >
-                      Recently published
-                    </button>
+                    {(['suggestion', 'new_journals'] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setSelectedTab(tab)}
+                        className={`px-5 py-2 text-sm font-medium rounded-lg transition-colors ${
+                          selectedTab === tab
+                            ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300'
+                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                        }`}
+                      >
+                        {tab === 'suggestion' ? 'Suggestion' : 'Recently published'}
+                      </button>
+                    ))}
                   </div>
                 )}
 
+                {/* Subscription keyword filters */}
                 {selectedCategory === 'Subscriptions' && activePreferences.subscriptions.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-6">
                     <button
@@ -463,7 +429,7 @@ export default function App() {
                           : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                       }`}
                     >
-                      All Subscriptions
+                      전체
                     </button>
                     {activePreferences.subscriptions.map(sub => (
                       <button
@@ -482,6 +448,7 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Error state */}
                 {error ? (
                   <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 rounded-2xl p-8 text-center">
                     <p className="text-rose-800 dark:text-rose-300 font-medium mb-4">{error}</p>
@@ -503,6 +470,7 @@ export default function App() {
                     </div>
                   </div>
                 ) : selectedCategory === 'Subscriptions' && activePreferences.subscriptions.length === 0 ? (
+                  /* Empty subscriptions */
                   <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
                     <Bookmark size={48} className="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">구독 중인 주제가 없습니다</h3>
@@ -605,6 +573,7 @@ export default function App() {
       {/* 모바일 바텀 네비게이션 */}
       <BottomNav
         selectedCategory={selectedCategory}
+        defaultSpecialty={lastSpecialtyRef.current || activePreferences.specialties[0] || ''}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
           setSelectedKeyword(null);
