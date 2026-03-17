@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { fetchLitePapersForCategory } from './services/gemini';
+import { fetchLitePapersForCategory, generateKoreanOneLinerBatch } from './services/gemini';
 import { Paper, UserPreferences } from './types';
 import Sidebar from './components/Sidebar';
 import PaperList from './components/PaperList';
@@ -154,6 +154,20 @@ export default function App() {
         if (fetched.length > 0) {
           papersCache.current[cacheKey] = fetched;
           setHomePapers(prev => ({ ...prev, [specialty]: fetched }));
+
+          // Background: Korean 1-liner batch — non-blocking, silent-fail
+          generateKoreanOneLinerBatch(fetched).then(koreanMap => {
+            if (Object.keys(koreanMap).length === 0) return;
+            setHomePapers(prev => {
+              const cur = prev[specialty];
+              if (!cur) return prev;
+              const updated = cur.map(p => ({
+                ...p, koreanSummary: koreanMap[p.id] ?? p.koreanSummary,
+              }));
+              papersCache.current[cacheKey] = updated;
+              return { ...prev, [specialty]: updated };
+            });
+          });
         }
       } finally {
         setHomeLoading(prev => ({ ...prev, [specialty]: false }));
@@ -197,7 +211,26 @@ export default function App() {
             ...(summaryCache.current[p.id] ?? {}),
           }));
           papersCache.current[cacheKey] = enriched;
-          if (isActive) setPapers(enriched);
+          if (isActive) {
+            setPapers(enriched);
+
+            // Background: Korean 1-liner for papers that don't have full AI summary yet
+            const liteOnly = enriched.filter(p => !p.shortSummary);
+            if (liteOnly.length > 0) {
+              generateKoreanOneLinerBatch(liteOnly).then(koreanMap => {
+                if (!isActive || Object.keys(koreanMap).length === 0) return;
+                setPapers(prev => prev.map(p => ({
+                  ...p, koreanSummary: koreanMap[p.id] ?? p.koreanSummary,
+                })));
+                // Update papersCache too so next visit uses Korean
+                if (papersCache.current[cacheKey]) {
+                  papersCache.current[cacheKey] = papersCache.current[cacheKey].map(p => ({
+                    ...p, koreanSummary: koreanMap[p.id] ?? p.koreanSummary,
+                  }));
+                }
+              });
+            }
+          }
         } else if (isActive) {
           setError('논문을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
         }

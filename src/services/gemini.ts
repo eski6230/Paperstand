@@ -416,6 +416,77 @@ export async function fetchLitePapersForCategory(
   }
 }
 
+// ─── Lightweight Korean batch summaries ──────────────────────────────────────
+
+/**
+ * Generate a short Korean 1-liner (≤15 words) for each lite paper.
+ * One single Gemini Flash Lite call for the whole batch → fast, cheap.
+ * Called right after fetchLitePapersForCategory resolves, non-blocking.
+ *
+ * Returns { [paperId]: koreanOneLiner }
+ * Silently returns {} on any failure so English abstract fallback shows instead.
+ */
+export async function generateKoreanOneLinerBatch(
+  papers: Array<Pick<Paper, 'id' | 'title' | 'abstract'>>,
+): Promise<Record<string, string>> {
+  if (papers.length === 0) return {};
+
+  let ai: ReturnType<typeof getAI>;
+  try { ai = getAI(); } catch { return {}; }  // no API key → silent fallback
+
+  const items = papers.map((p, i) => {
+    const context = p.abstract
+      ? p.abstract.slice(0, 220)
+      : p.title;
+    return `${i + 1}. ${context}`;
+  }).join('\n\n');
+
+  const prompt = `다음 의학 논문 초록들을 각각 15단어 이내 한국어 한 문장으로 요약하세요.
+핵심 발견과 임상적 의의에 집중하고, 의학 영어 용어(약물명·검사명·질환명)는 영어 그대로 유지하세요.
+
+${items}`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash-lite',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summaries: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  index: { type: Type.INTEGER },
+                  kr:    { type: Type.STRING },
+                },
+                required: ['index', 'kr'],
+              },
+            },
+          },
+          required: ['summaries'],
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) return {};
+
+    const result = JSON.parse(text) as { summaries: Array<{ index: number; kr: string }> };
+    const map: Record<string, string> = {};
+    result.summaries.forEach(s => {
+      const paper = papers[s.index - 1];
+      if (paper && s.kr) map[paper.id] = s.kr;
+    });
+    return map;
+  } catch {
+    return {};  // any error → fall back to English abstract display
+  }
+}
+
 // ─── On-demand AI summarisation ──────────────────────────────────────────────
 
 /**

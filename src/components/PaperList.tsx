@@ -17,18 +17,29 @@ interface PaperListProps {
   readPaperIds?: Set<string>;
 }
 
-/** shortSummary 첫 줄 → 헤드라인. 없으면 abstract 첫 문장 fallback. */
-function extractHeadline(shortSummary: string, abstract?: string): string {
+/**
+ * Priority: shortSummary first line → koreanSummary (batch AI) → English abstract.
+ * Returns the text and its source so the card can style it appropriately.
+ */
+function extractHeadline(
+  shortSummary: string,
+  abstract?: string,
+  koreanSummary?: string,
+): { text: string; source: 'ai' | 'korean' | 'abstract' | 'none' } {
   if (shortSummary) {
     const lines = shortSummary.split(/\\n|\n/).map(l => l.trim()).filter(Boolean);
-    if (lines.length > 0) return lines[0].replace(/^[\d]+\.\s*|^[-•*]\s*/, '').trim();
+    if (lines.length > 0)
+      return { text: lines[0].replace(/^[\d]+\.\s*|^[-•*]\s*/, '').trim(), source: 'ai' };
+  }
+  if (koreanSummary) {
+    return { text: koreanSummary, source: 'korean' };
   }
   if (abstract) {
     const clean = abstract.replace(/^(BACKGROUND|OBJECTIVE|AIMS?|PURPOSE|INTRODUCTION|CONTEXT)[:\s]*/i, '').trim();
     const first = clean.split(/(?<=[.!?])\s+/)[0] || clean;
-    return first.length > 130 ? first.slice(0, 130) + '…' : first;
+    return { text: first.length > 130 ? first.slice(0, 130) + '…' : first, source: 'abstract' };
   }
-  return '';
+  return { text: '', source: 'none' };
 }
 
 /** shortSummary 2~4줄 → 미리보기. 없으면 abstract 앞부분 fallback. */
@@ -93,9 +104,11 @@ interface PaperCardProps {
 }
 
 function PaperCard({ paper, index, summary, isRead, onSelectPaper, onSelectKeyword }: PaperCardProps) {
-  const isLite = !paper.shortSummary;                         // no AI summary yet
-  const headline = extractHeadline(paper.shortSummary || '', paper.abstract);
-  const preview  = extractPreview(paper.shortSummary || '', paper.abstract);
+  const isLite = !paper.shortSummary;  // no full AI summary yet
+  const { text: headlineText, source: headlineSource } = extractHeadline(
+    paper.shortSummary || '', paper.abstract, paper.koreanSummary,
+  );
+  const preview = extractPreview(paper.shortSummary || '', paper.abstract);
   const isNew = isNewPaper(paper.date);
   const isPopular = (summary?.voteScore ?? 0) >= 3;
   const hasActivity = summary && summary.voteScore !== 0;
@@ -144,21 +157,34 @@ function PaperCard({ paper, index, summary, isRead, onSelectPaper, onSelectKeywo
           </div>
         </div>
 
-        {/* ── Row 2: 핵심 한 줄 요약 (Layer 1 - 최우선) ─────── */}
-        {headline && (
-          <p className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-50 leading-snug mb-1 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 transition-colors">
-            {headline}
+        {/* ── Row 2: 헤드라인 (AI 요약 > 한국어 1줄 > 영어 abstract) ─── */}
+        {headlineText && (
+          <p className={`text-base sm:text-lg font-bold leading-snug mb-1 transition-colors
+            ${headlineSource === 'abstract'
+              ? 'text-slate-700 dark:text-slate-300 group-hover:text-indigo-700 dark:group-hover:text-indigo-300'
+              : 'text-slate-900 dark:text-slate-50 group-hover:text-indigo-700 dark:group-hover:text-indigo-300'
+            }`}
+          >
+            {headlineText}
           </p>
         )}
 
-        {/* 라벨: AI 요약 있으면 "30 sec read", 없으면 "탭하여 AI 요약 보기" */}
-        <span className={`inline-block text-[10px] font-semibold tracking-wider uppercase mb-3 ${
-          isLite
-            ? 'text-indigo-400 dark:text-indigo-500'
-            : 'text-slate-400 dark:text-slate-500'
-        }`}>
-          {isLite ? '탭하여 AI 요약 보기 ✦' : '30 sec read'}
-        </span>
+        {/* 라벨 */}
+        <div className="flex items-center gap-1.5 mb-3">
+          <span className={`inline-block text-[10px] font-semibold tracking-wider uppercase ${
+            isLite
+              ? 'text-indigo-400 dark:text-indigo-500'
+              : 'text-slate-400 dark:text-slate-500'
+          }`}>
+            {isLite ? '탭하여 AI 요약 보기 ✦' : '30 sec read'}
+          </span>
+          {/* KR badge: shown only when koreanSummary is the active headline */}
+          {headlineSource === 'korean' && (
+            <span className="text-[9px] font-bold tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-1 py-0.5 rounded uppercase">
+              KR
+            </span>
+          )}
+        </div>
 
         {/* ── 구분선 ──────────────────────────────────────────── */}
         <div className="h-px bg-slate-100 dark:bg-slate-800 mb-3" />

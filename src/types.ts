@@ -16,6 +16,7 @@ export interface Paper {
   shortSummary: string;
   detailedSummary?: string;
   abstract?: string;           // raw PubMed abstract (lite papers)
+  koreanSummary?: string;      // lightweight 1-line Korean summary (batch-generated, pre-AI)
   url: string;
   relatedArticles?: RelatedArticle[];
   imageCategory?: 'endoscopy' | 'radiology' | 'surgery' | 'laboratory' | 'clinical' | 'none';
