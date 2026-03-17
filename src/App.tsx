@@ -9,7 +9,6 @@ import { Paper, UserPreferences } from './types';
 import Sidebar from './components/Sidebar';
 import PaperList from './components/PaperList';
 import PaperModal from './components/PaperModal';
-import QuickViewPanel from './components/QuickViewPanel';
 import Onboarding from './components/Onboarding';
 import MeTab from './components/MeTab';
 import ApiKeyModal from './components/ApiKeyModal';
@@ -54,7 +53,6 @@ export default function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
-  const [quickViewPaper, setQuickViewPaper] = useState<Paper | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
@@ -244,14 +242,7 @@ export default function App() {
     setSelectedKeyword(null);
   };
 
-  // 카드 클릭 → QuickView (history 미추가)
   const handleOpenPaper = (paper: Paper) => {
-    setQuickViewPaper(paper);
-  };
-
-  // QuickView에서 "자세히 읽기" → Full Modal + history 추가
-  const handleOpenFullPaper = (paper: Paper) => {
-    setQuickViewPaper(null);
     setSelectedPaper(paper);
     if (preferences) {
       const newHistory = [paper, ...preferences.history.filter(p => p.id !== paper.id)].slice(0, 50);
@@ -589,16 +580,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Quick View Panel (카드 클릭 시 먼저 표시) */}
-      {quickViewPaper && (
-        <QuickViewPanel
-          paper={quickViewPaper}
-          onClose={() => setQuickViewPaper(null)}
-          onReadMore={() => handleOpenFullPaper(quickViewPaper)}
-        />
-      )}
-
-      {/* Paper Modal (자세히 읽기 클릭 시 표시) */}
+      {/* Paper Modal */}
       {selectedPaper && (
         <PaperModal
           initialPaper={selectedPaper}

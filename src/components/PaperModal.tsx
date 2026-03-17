@@ -1,5 +1,5 @@
 import { Paper, RelatedArticle } from '../types';
-import { X, ExternalLink, BookOpen, ChevronRight, ThumbsUp, ThumbsDown, BookmarkPlus, BookmarkCheck, MessageCircle, Send, ArrowLeft, Loader2 } from 'lucide-react';
+import { X, ExternalLink, BookOpen, ChevronRight, ThumbsUp, ThumbsDown, BookmarkPlus, BookmarkCheck, MessageCircle, Send, ArrowLeft, Loader2, Lightbulb, FlaskConical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState, useRef } from 'react';
 import { askQuestionAboutPaper, fetchSpecificPaperDetails, fetchPaperDetails } from '../services/gemini';
@@ -320,91 +320,125 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
           )}
 
           {/* Scrollable Content */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 space-y-8 relative">
-            <div className={isFetchingRelated ? "opacity-0 pointer-events-none" : "space-y-8"}>
-              {/* Detailed Summary */}
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-5 sm:p-6 relative">
+            <div className={isFetchingRelated ? "opacity-0 pointer-events-none space-y-6" : "space-y-6"}>
+
+              {/* ── 섹션 1: 상세 분석 (detailedSummary) ─────────────── */}
               <section>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <BookOpen size={18} className="text-indigo-500" />
-                Detailed Abstract Summary
-              </h3>
-              <div className="prose prose-slate dark:prose-invert prose-sm max-w-none">
+                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <FlaskConical size={13} />
+                  연구 결과
+                </h3>
+
                 {isLoadingDetails ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    <Loader2 size={32} className="animate-spin text-indigo-500 mb-4" />
-                    <p className="font-medium text-slate-700 dark:text-slate-300">AI가 논문을 분석하고 요약 중입니다...</p>
-                    <p className="text-xs mt-2 mb-6">잠시만 기다려주세요.</p>
+                  <div className="flex flex-col items-center justify-center py-10 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+                    <Loader2 size={28} className="animate-spin text-indigo-500 mb-3" />
+                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">AI가 논문을 분석 중입니다...</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 mb-5">잠시만 기다려주세요.</p>
                     <a
                       href={currentPaper.url}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
                     >
-                      PubMed에서 원문 보기
-                      <ExternalLink size={16} />
+                      PubMed에서 원문 보기 <ExternalLink size={14} />
                     </a>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {(currentPaper.detailedSummary || currentPaper.shortSummary || "").split(/\\n|\n/).filter(line => line.trim() !== '').map((line, i) => (
-                      <p key={i} className="flex items-start gap-3 text-slate-700 dark:text-slate-300 leading-relaxed">
-                        <span className="text-indigo-400 font-bold shrink-0 mt-0.5">•</span>
-                        <span>{line.replace(/^\d+\.\s*/, '')}</span>
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
+                ) : (() => {
+                  const src = currentPaper.detailedSummary || currentPaper.shortSummary || '';
+                  const lines = src.split(/\\n|\n/).map(l => l.trim()).filter(Boolean);
+                  // 임상적 의의 후보: "임상", "결론", "따라서", "suggest", "recommend", "고려" 포함 마지막 줄
+                  const clinicalIdx = (() => {
+                    const CLINICAL_KEYWORDS = ['임상', '결론', '따라서', '고려', 'suggest', 'recommend', '권고', '중요'];
+                    for (let i = lines.length - 1; i >= 0; i--) {
+                      if (CLINICAL_KEYWORDS.some(kw => lines[i].toLowerCase().includes(kw))) return i;
+                    }
+                    return lines.length > 1 ? lines.length - 1 : -1;
+                  })();
+                  const bodyLines = lines.filter((_, i) => i !== clinicalIdx);
+                  const clinicalLine = clinicalIdx >= 0 ? lines[clinicalIdx] : null;
 
-              {!isLoadingDetails && (
-                <div className="mt-6 flex flex-wrap items-center gap-3">
-                  <a
-                    href={currentPaper.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm"
-                  >
-                    Search on PubMed
-                    <ExternalLink size={16} />
-                  </a>
+                  return (
+                    <>
+                      {/* 본문 결과 */}
+                      <div className="space-y-3">
+                        {bodyLines.map((line, i) => (
+                          <div key={i} className="flex items-start gap-3">
+                            <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-400 dark:bg-indigo-500 shrink-0" />
+                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                              {line.replace(/^[\d]+\.\s*|^[-•*]\s*/, '')}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
 
-                  {/* 투표 */}
-                  <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800 ml-auto">
-                    <button
-                      onClick={() => user ? handleVoteClick(1) : onRequestLogin()}
-                      title={user ? "유용한 논문" : "로그인 후 투표 가능"}
-                      disabled={isVoting}
-                      className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
-                        userVote === 1
-                          ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20'
-                          : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-40'
-                      }`}
-                    >
-                      <ThumbsUp size={18} />
-                    </button>
-                    <span className={`text-sm font-semibold min-w-[1.5rem] text-center ${
-                      voteCount > 0 ? 'text-emerald-600 dark:text-emerald-400' :
-                      voteCount < 0 ? 'text-rose-600 dark:text-rose-400' :
-                      'text-slate-500 dark:text-slate-400'
-                    }`}>
-                      {voteCount > 0 ? `+${voteCount}` : voteCount}
-                    </span>
-                    <button
-                      onClick={() => user ? handleVoteClick(-1) : onRequestLogin()}
-                      title={user ? "별로인 논문" : "로그인 후 투표 가능"}
-                      disabled={isVoting}
-                      className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
-                        userVote === -1
-                          ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/20'
-                          : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-40'
-                      }`}
-                    >
-                      <ThumbsDown size={18} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
+                      {/* 임상적 의의 callout */}
+                      {clinicalLine && (
+                        <div className="mt-4 flex items-start gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-2xl px-4 py-3.5">
+                          <Lightbulb size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">임상적 의의</p>
+                            <p className="text-sm text-amber-900 dark:text-amber-200 leading-relaxed">
+                              {clinicalLine.replace(/^[\d]+\.\s*|^[-•*]\s*/, '')}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 액션 바 */}
+                      <div className="mt-5 flex flex-wrap items-center gap-3">
+                        <a
+                          href={currentPaper.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm"
+                        >
+                          <BookOpen size={14} />
+                          PubMed 원문
+                          <ExternalLink size={13} />
+                        </a>
+
+                        {/* 투표 */}
+                        <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800 ml-auto">
+                          <button
+                            onClick={() => user ? handleVoteClick(1) : onRequestLogin()}
+                            title={user ? "유용한 논문" : "로그인 후 투표 가능"}
+                            disabled={isVoting}
+                            className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
+                              userVote === 1
+                                ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20'
+                                : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-40'
+                            }`}
+                          >
+                            <ThumbsUp size={17} />
+                          </button>
+                          <span className={`text-sm font-semibold min-w-[1.5rem] text-center ${
+                            voteCount > 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                            voteCount < 0 ? 'text-rose-600 dark:text-rose-400' :
+                            'text-slate-500 dark:text-slate-400'
+                          }`}>
+                            {voteCount > 0 ? `+${voteCount}` : voteCount}
+                          </span>
+                          <button
+                            onClick={() => user ? handleVoteClick(-1) : onRequestLogin()}
+                            title={user ? "별로인 논문" : "로그인 후 투표 가능"}
+                            disabled={isVoting}
+                            className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
+                              userVote === -1
+                                ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/20'
+                                : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-40'
+                            }`}
+                          >
+                            <ThumbsDown size={17} />
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </section>
+
+              <div className="h-px bg-slate-100 dark:bg-slate-800" />
 
             {/* Q&A Section */}
             <section className="bg-slate-50 dark:bg-slate-800/30 rounded-2xl p-5 border border-slate-100 dark:border-slate-800">
