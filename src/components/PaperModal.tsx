@@ -1,11 +1,11 @@
 import { Paper, RelatedArticle } from '../types';
-import { X, ExternalLink, BookOpen, ChevronRight, ThumbsUp, ThumbsDown, BookmarkPlus, BookmarkCheck, MessageCircle, Send, ArrowLeft, Loader2 } from 'lucide-react';
+import { X, ExternalLink, BookOpen, ChevronRight, ThumbsUp, ThumbsDown, BookmarkPlus, BookmarkCheck, MessageCircle, Send, ArrowLeft, Loader2, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState, useRef } from 'react';
 import { askQuestionAboutPaper, fetchSpecificPaperDetails, fetchPaperDetails } from '../services/gemini';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
-import CommentsSection from './CommentsSection';
+import ShareToCommunityModal from './ShareToCommunityModal';
 
 interface PaperModalProps {
   initialPaper: Paper;
@@ -15,13 +15,14 @@ interface PaperModalProps {
   onSubscribe: (keyword: string) => void;
   subscriptions: string[];
   user: User | null;
+  onRequestLogin: () => void;
 }
 
-export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onVote, onSubscribe, subscriptions, user }: PaperModalProps) {
+export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onVote, onSubscribe, subscriptions, user, onRequestLogin }: PaperModalProps) {
   const [paperStack, setPaperStack] = useState<Paper[]>([initialPaper]);
   const [isFetchingRelated, setIsFetchingRelated] = useState(false);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-  
+
   const [question, setQuestion] = useState("");
   const [chatHistory, setChatHistory] = useState<{q: string, a: string, foundInPaper?: boolean, isSearching?: boolean}[]>([]);
   const [isAsking, setIsAsking] = useState(false);
@@ -30,7 +31,10 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
   const [voteCount, setVoteCount] = useState(0);
   const [userVote, setUserVote] = useState<1 | -1 | null>(null);
   const [isVoting, setIsVoting] = useState(false);
-  
+
+  // Community share modal
+  const [showShareModal, setShowShareModal] = useState(false);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const currentPaper = paperStack[paperStack.length - 1];
@@ -103,10 +107,10 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
     const q = question;
     setQuestion("");
     setIsAsking(true);
-    
+
     // Add optimistic user message
     setChatHistory(prev => [...prev, { q, a: "" }]);
-    
+
     try {
       const response = await askQuestionAboutPaper(currentPaper, q);
       setChatHistory(prev => {
@@ -140,11 +144,11 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
     try {
       const { askQuestionWithSearch } = await import('../services/gemini');
       const answer = await askQuestionWithSearch(currentPaper, chat.q);
-      
+
       setChatHistory(prev => {
         const newHistory = [...prev];
         newHistory[idx].a = answer;
-        newHistory[idx].foundInPaper = true; // Hide the search button after successful search
+        newHistory[idx].foundInPaper = true;
         newHistory[idx].isSearching = false;
         return newHistory;
       });
@@ -161,7 +165,6 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
   };
 
   const handleRelatedClick = async (article: RelatedArticle) => {
-    // 제목/날짜/PubMed 버튼을 즉시 표시
     const skeletonPaper: Paper = {
       id: `related-skeleton-${Date.now()}`,
       title: article.title,
@@ -202,14 +205,12 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
     try {
       const isSameVote = userVote === direction;
       if (isSameVote) {
-        // Remove vote
         await supabase.from('paper_votes').delete()
           .eq('user_id', user.id).eq('paper_id', currentPaper.id);
         setVoteCount(prev => prev - direction);
         setUserVote(null);
-        onVote(currentPaper, -direction); // undo local weight change
+        onVote(currentPaper, -direction);
       } else {
-        // Upsert vote
         await supabase.from('paper_votes').upsert({
           user_id: user.id,
           paper_id: currentPaper.id,
@@ -219,7 +220,7 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
         const diff = userVote ? direction - userVote : direction;
         setVoteCount(prev => prev + diff);
         setUserVote(direction);
-        onVote(currentPaper, diff); // update local weight
+        onVote(currentPaper, diff);
       }
     } finally {
       setIsVoting(false);
@@ -232,27 +233,34 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
     }
   };
 
+  const handleShareClick = () => {
+    if (!user) {
+      onRequestLogin();
+      return;
+    }
+    setShowShareModal(true);
+  };
+
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
           onClick={onClose}
         />
-        
+
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           className="relative w-full max-w-3xl max-h-[92vh] sm:max-h-[90vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800"
         >
-          {/* Header — 모바일 compact / 데스크톱 normal */}
+          {/* Header */}
           <div className="flex items-start justify-between px-4 py-3 sm:p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
             <div className="pr-8 flex-1 min-w-0">
-              {/* 메타 라인 */}
               <div className="flex items-center flex-wrap gap-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-1.5 sm:mb-2">
                 {paperStack.length > 1 && (
                   <button
@@ -265,11 +273,9 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
                 <span className="font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 rounded">{currentPaper.journal}</span>
                 <span>{currentPaper.date}</span>
               </div>
-              {/* 제목 — 모바일 text-base, 데스크톱 text-2xl */}
               <h2 className="text-base sm:text-2xl font-bold text-slate-900 dark:text-slate-100 leading-snug line-clamp-3 sm:line-clamp-none">
                 {currentPaper.title}
               </h2>
-              {/* 키워드 — 모바일에서 최대 3개만 + 나머지 숨김 */}
               <div className="flex flex-wrap gap-1.5 mt-2 sm:mt-4">
                 {currentPaper.keywords.slice(0, window.innerWidth < 640 ? 3 : undefined).map((kw) => {
                   const isSubscribed = subscriptions.includes(kw);
@@ -359,12 +365,12 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
                   </div>
                 )}
               </div>
-              
+
               {!isLoadingDetails && (
-                <div className="mt-6 flex flex-wrap items-center gap-4">
-                  <a 
-                    href={currentPaper.url} 
-                    target="_blank" 
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <a
+                    href={currentPaper.url}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm"
                   >
@@ -372,37 +378,51 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
                     <ExternalLink size={16} />
                   </a>
 
-                  <div className="flex items-center gap-1 ml-auto bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                  {/* 투표 + 커뮤니티 공유 묶음 */}
+                  <div className="flex items-center gap-2 ml-auto">
+                    {/* 투표 */}
+                    <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                      <button
+                        onClick={() => user ? handleVoteClick(1) : onRequestLogin()}
+                        title={user ? "유용한 논문" : "로그인 후 투표 가능"}
+                        disabled={isVoting}
+                        className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
+                          userVote === 1
+                            ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20'
+                            : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-40'
+                        }`}
+                      >
+                        <ThumbsUp size={18} />
+                      </button>
+                      <span className={`text-sm font-semibold min-w-[1.5rem] text-center ${
+                        voteCount > 0 ? 'text-emerald-600 dark:text-emerald-400' :
+                        voteCount < 0 ? 'text-rose-600 dark:text-rose-400' :
+                        'text-slate-500 dark:text-slate-400'
+                      }`}>
+                        {voteCount > 0 ? `+${voteCount}` : voteCount}
+                      </span>
+                      <button
+                        onClick={() => user ? handleVoteClick(-1) : onRequestLogin()}
+                        title={user ? "별로인 논문" : "로그인 후 투표 가능"}
+                        disabled={isVoting}
+                        className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
+                          userVote === -1
+                            ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/20'
+                            : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-40'
+                        }`}
+                      >
+                        <ThumbsDown size={18} />
+                      </button>
+                    </div>
+
+                    {/* 커뮤니티 공유 버튼 */}
                     <button
-                      onClick={() => user ? handleVoteClick(1) : undefined}
-                      title={user ? "유용한 논문" : "로그인 후 투표 가능"}
-                      disabled={isVoting || !user}
-                      className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
-                        userVote === 1
-                          ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/20'
-                          : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-40'
-                      }`}
+                      onClick={handleShareClick}
+                      title="커뮤니티에 공유"
+                      className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 rounded-xl transition-colors"
                     >
-                      <ThumbsUp size={18} />
-                    </button>
-                    <span className={`text-sm font-semibold min-w-[1.5rem] text-center ${
-                      voteCount > 0 ? 'text-emerald-600 dark:text-emerald-400' :
-                      voteCount < 0 ? 'text-rose-600 dark:text-rose-400' :
-                      'text-slate-500 dark:text-slate-400'
-                    }`}>
-                      {voteCount > 0 ? `+${voteCount}` : voteCount}
-                    </span>
-                    <button
-                      onClick={() => user ? handleVoteClick(-1) : undefined}
-                      title={user ? "별로인 논문" : "로그인 후 투표 가능"}
-                      disabled={isVoting || !user}
-                      className={`p-2 rounded-lg transition-colors disabled:cursor-not-allowed ${
-                        userVote === -1
-                          ? 'text-rose-600 bg-rose-50 dark:bg-rose-500/20'
-                          : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-40'
-                      }`}
-                    >
-                      <ThumbsDown size={18} />
+                      <Share2 size={16} />
+                      <span className="hidden sm:inline">공유</span>
                     </button>
                   </div>
                 </div>
@@ -415,7 +435,7 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
                 <MessageCircle size={18} className="text-indigo-500" />
                 논문에 대해 질문하기
               </h3>
-              
+
               <div className="space-y-4 mb-4 max-h-60 overflow-y-auto pr-2">
                 {chatHistory.map((chat, idx) => (
                   <div key={idx} className="space-y-3 text-sm">
@@ -450,16 +470,16 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
               </div>
 
               <div className="flex gap-2">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
-                  placeholder="예: 이 연구에서 대조군이 사용한 약물은 무엇인가요?" 
+                  placeholder="예: 이 연구에서 대조군이 사용한 약물은 무엇인가요?"
                   className="flex-1 px-4 py-2.5 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-500 dark:text-white"
                   disabled={isAsking}
                 />
-                <button 
+                <button
                   onClick={handleAsk}
                   disabled={isAsking || !question.trim()}
                   className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-xl transition-colors flex items-center justify-center"
@@ -484,15 +504,15 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                   {currentPaper.relatedArticles.map((article, idx) => (
-                    <div 
-                      key={idx} 
+                    <div
+                      key={idx}
                       onClick={() => handleRelatedClick(article)}
                       className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 border border-slate-100 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-500/50 transition-colors group cursor-pointer"
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                          article.type.toLowerCase().includes('review') 
-                            ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300' 
+                          article.type.toLowerCase().includes('review')
+                            ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                             : 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
                         }`}>
                           {article.type}
@@ -513,23 +533,20 @@ export default function PaperModal({ initialPaper, onClose, onSelectKeyword, onV
                 </div>
               </section>
             ) : null}
-
-            {/* Comments Section */}
-            <CommentsSection
-              paperId={currentPaper.id}
-              paperTitle={currentPaper.title}
-              user={user}
-              onRequestLogin={() => {
-                supabase.auth.signInWithOAuth({
-                  provider: 'google',
-                  options: { redirectTo: window.location.origin },
-                });
-              }}
-            />
             </div>
           </div>
         </motion.div>
       </div>
+
+      {/* 커뮤니티 공유 모달 */}
+      {showShareModal && (
+        <ShareToCommunityModal
+          paper={currentPaper}
+          user={user}
+          onClose={() => setShowShareModal(false)}
+          onSubmit={() => setShowShareModal(false)}
+        />
+      )}
     </AnimatePresence>
   );
 }

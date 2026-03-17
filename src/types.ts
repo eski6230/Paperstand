@@ -49,3 +49,28 @@ export interface PaperVote {
   vote: 1 | -1;
   created_at: string;
 }
+
+export interface CommunityPost {
+  id: string;
+  user_id: string;
+  paper_id: string;
+  paper_title: string;
+  paper_journal?: string;
+  paper_date?: string;
+  paper_url?: string;
+  content: string;
+  created_at: string;
+  profiles?: { display_name: string | null; avatar_url: string | null };
+  vote_score?: number;
+  user_vote?: 1 | -1 | null;
+  comment_count?: number;
+}
+
+export interface CommunityPostComment {
+  id: string;
+  user_id: string;
+  post_id: string;
+  content: string;
+  created_at: string;
+  profiles?: { display_name: string | null; avatar_url: string | null };
+}

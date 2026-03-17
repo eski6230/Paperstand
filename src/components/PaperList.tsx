@@ -27,9 +27,9 @@ export default function PaperList({ papers, loading, isStreaming, onSelectPaper,
     const ids = papers.map(p => p.id);
 
     (async () => {
-      const [voteRes, commentRes] = await Promise.all([
+      const [voteRes, communityRes] = await Promise.all([
         supabase.from('paper_votes').select('paper_id, vote').in('paper_id', ids),
-        supabase.from('paper_comments').select('paper_id').in('paper_id', ids),
+        supabase.from('community_posts').select('paper_id').in('paper_id', ids),
       ]);
 
       const summaries: Record<string, VoteSummary> = {};
@@ -38,7 +38,7 @@ export default function PaperList({ papers, loading, isStreaming, onSelectPaper,
       (voteRes.data || []).forEach(v => {
         if (summaries[v.paper_id]) summaries[v.paper_id].voteScore += v.vote;
       });
-      (commentRes.data || []).forEach(c => {
+      (communityRes.data || []).forEach(c => {
         if (summaries[c.paper_id]) summaries[c.paper_id].commentCount += 1;
       });
 

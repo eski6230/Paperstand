@@ -16,7 +16,8 @@ import AuthButton from './components/AuthButton';
 import BottomNav from './components/BottomNav';
 import CategoryTabs from './components/CategoryTabs';
 import PrivacyPolicyModal from './components/PrivacyPolicyModal';
-import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown } from 'lucide-react';
+import CommunityTab from './components/CommunityTab';
+import { Menu, Newspaper, Moon, Sun, Bookmark, RefreshCw, ArrowDown, Users } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
@@ -45,7 +46,7 @@ export default function App() {
 
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
-  const [selectedTab, setSelectedTab] = useState<'suggestion' | 'new_journals'>('suggestion');
+  const [selectedTab, setSelectedTab] = useState<'suggestion' | 'new_journals' | 'community'>('suggestion');
   const [papers, setPapers] = useState<Paper[]>([]);
   const papersCache = useRef<Record<string, Paper[]>>({});
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -111,7 +112,7 @@ export default function App() {
   }, [preferences, selectedCategory]);
 
   useEffect(() => {
-    if (!preferences || !selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest') return;
+    if (!preferences || !selectedCategory || selectedCategory === 'History' || selectedCategory === 'My Interest' || selectedTab === 'community') return;
     
     let isActive = true;
     const cacheKey = `${selectedCategory}-${selectedKeyword || 'all'}-${selectedTab}`;
@@ -319,7 +320,7 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Header */}
-        <header className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 h-14 flex items-center px-4 shrink-0 justify-between transition-colors duration-200 z-10">
+        <header className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 h-14 flex items-center px-4 shrink-0 justify-between transition-colors duration-200 relative z-20">
           <div className="flex items-center gap-2">
             {/* 햄버거: 데스크톱에서만 표시 (사이드바 없는 레이아웃 대비) */}
             <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 hidden md:flex transition-colors">
@@ -463,6 +464,17 @@ export default function App() {
                     >
                       Recently published
                     </button>
+                    <button
+                      onClick={() => setSelectedTab('community')}
+                      className={`flex items-center gap-1.5 px-5 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                        selectedTab === 'community'
+                          ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-700 dark:text-indigo-300'
+                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      <Users size={14} />
+                      커뮤니티
+                    </button>
                   </div>
                 )}
 
@@ -495,7 +507,12 @@ export default function App() {
                   </div>
                 )}
 
-                {error ? (
+                {selectedTab === 'community' ? (
+                  <CommunityTab
+                    user={currentUser}
+                    onRequestLogin={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })}
+                  />
+                ) : error ? (
                   <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 rounded-2xl p-8 text-center">
                     <p className="text-rose-800 dark:text-rose-300 font-medium mb-4">{error}</p>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -600,6 +617,7 @@ export default function App() {
           onSubscribe={handleSubscribe}
           subscriptions={preferences.subscriptions}
           user={currentUser}
+          onRequestLogin={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })}
         />
       )}
 
